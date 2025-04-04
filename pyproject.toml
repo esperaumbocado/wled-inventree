@@ -36,7 +36,7 @@ dev = ['twine', 'setuptools']
 "Bug Tracker" = "https://github.com/invenhost/inventree-wled-locator/issues"
 
 [project.entry-points."inventree_plugins"]
-inventree_wled_locator = "inventree_wled_locator:WledPlugin"
+inventree_wled_locator = "inventree_wled_locator:WledInventreePlugin"
 
 [tool.setuptools.packages.find]
 where = ["src"]
