@@ -19,6 +19,8 @@ from common.notifications import NotificationBody
 from InvenTree.helpers_model import notify_users
 from plugin import InvenTreePlugin
 from plugin.mixins import LocateMixin, SettingsMixin, UrlsMixin
+import threading
+import time
 
 logger = logging.getLogger("inventree")
 
@@ -231,7 +233,8 @@ class WledInventreePlugin(UrlsMixin, LocateMixin, SettingsMixin, InvenTreePlugin
         """
 
     def _set_led(self, target_led: int = None, request=None):
-        """Turn on a specific LED."""
+        """Turn on a specific LED for 20 seconds."""
+
         address = self.get_setting("ADDRESS")
         max_leds = self.get_setting("MAX_LEDS")
 
@@ -254,10 +257,21 @@ class WledInventreePlugin(UrlsMixin, LocateMixin, SettingsMixin, InvenTreePlugin
             timeout=3,
         )
 
-        # Turn on target led
+        # Turn on target LED
         if target_led is not None:
             requests.post(
                 base_url,
                 json={"seg": {"i": [target_led, color_marked]}},
                 timeout=3,
             )
+
+            # Turn off the LED after 20 seconds
+            def turn_off_led():
+                time.sleep(20)
+                requests.post(
+                    base_url,
+                    json={"seg": {"i": [target_led, color_black]}},
+                    timeout=3,
+                )
+
+            threading.Thread(target=turn_off_led, daemon=True).start()
