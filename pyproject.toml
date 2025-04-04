@@ -10,7 +10,7 @@ readme = "README.md"
 license = {text = "MIT license"}
 keywords = ["inventree", "inventree-plugin", "inventree-wled-locator"]
 authors = [
-    {name = "Matthias Mair", email =  "code@mjmair.com"}
+    {name = "Matthias Mair", email =  "code@mjmair.com"},
     {name = "Rui Borges", email = "ruiborges206@gmail.com"}
 ]
 classifiers=[
