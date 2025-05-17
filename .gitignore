@@ -1,3 +1,8 @@
 .venv/
 dist/
+.vscode/
+__pycache__/
+build/
 inventree_wled_stocktree.egg-info/
+src/inventree_wled_stocktree/__pycache__/
+src/inventree_wled_stocktree/inventree.code-workspace
