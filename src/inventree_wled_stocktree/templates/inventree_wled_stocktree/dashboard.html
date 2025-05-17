@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WLED Dashboard</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #f4f4f9;
+            color: #333;
+        }
+        header {
+            background-color: #0078d7;
+            color: white;
+            padding: 1rem;
+            text-align: center;
+        }
+        main {
+            padding: 2rem;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 1rem;
+        }
+        table th, table td {
+            border: 1px solid #ddd;
+            padding: 0.75rem;
+            text-align: left;
+        }
+        table th {
+            background-color: #0078d7;
+            color: white;
+        }
+        table tr:nth-child(even) {
+            background-color: #f9f9f9;
+        }
+        table tr:hover {
+            background-color: #f1f1f1;
+        }
+        .btn {
+            display: inline-block;
+            padding: 0.5rem 1rem;
+            margin: 0.5rem 0;
+            color: white;
+            background-color: #0078d7;
+            text-decoration: none;
+            border-radius: 4px;
+        }
+        .btn:hover {
+            background-color: #005a9e;
+        }
+        .btn-danger {
+            background-color: #d9534f;
+        }
+        .btn-danger:hover {
+            background-color: #c9302c;
+        }
+        form {
+            margin-top: 2rem;
+            padding: 1rem;
+            background-color: #fff;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        form label {
+            display: block;
+            margin-bottom: 0.5rem;
+        }
+        form input {
+            width: 100%;
+            padding: 0.5rem;
+            margin-bottom: 1rem;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        form button {
+            padding: 0.5rem 1rem;
+            color: white;
+            background-color: #0078d7;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        form button:hover {
+            background-color: #005a9e;
+        }
+        /* Remove form styling for inline unregister forms in tables */
+        .table-action-form {
+            margin: 0;
+            padding: 0;
+            background: none;
+            border: none;
+            display: inline;
+        }
+        .table-action-form button {
+            padding: 0.5rem 1rem;
+            color: white;
+            background-color: #d9534f;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        .table-action-form button:hover {
+            background-color: #c9302c;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>WLED StockTree Dashboard</h1>
+    </header>
+    <main>
+        <h2>Registered WLED Instances</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>IP Address</th>
+                    <th>Max LEDs</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for wled in wled_instances %}
+                <tr>
+                    <td>{{ wled.id }}</td>
+                    <td>{{ wled.ip }}</td>
+                    <td>{{ wled.max_leds }}</td>
+                    <td>
+                        <form method="post" action="{% url 'plugin:inventree-wled-stocktree:unregister-wled' %}" class="table-action-form">
+                            {% csrf_token %}
+                            <input type="hidden" name="wled_id" value="{{ wled.id }}">
+                            <button type="submit" class="btn btn-danger">Unregister</button>
+                        </form>
+                    </td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="4">No WLED instances registered.</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+
+        <form id="register-wled-instance-form" method="post" action="{% url 'plugin:inventree-wled-stocktree:register-wled' %}">
+            {% csrf_token %}
+            <h3>Register WLED Instance</h3>
+            <label for="wled_ip">WLED IP Address:</label>
+            <input type="text" id="wled_ip" name="wled_ip" placeholder="Enter WLED IP" required>
+
+            <label for="wled_max_leds">Max LEDs:</label>
+            <input type="number" id="wled_max_leds" name="wled_max_leds" placeholder="Enter max LEDs" required>
+
+            <button type="submit">Add WLED Instance</button>
+        </form>
+
+
+        <h2>Registered Stock Locations</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Name</th>
+                    <th>WLED Instance</th>
+                    <th>LED</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for loc in target_locs %}
+                <tr>
+                    <td>{{ loc.id }}</td>
+                    <td>{{ loc.name }}</td>
+                    <td>{{ loc.instance}}</td>
+                    <td>{{ loc.led }}</td>
+                    <td>
+                        <a href="{% url 'plugin:inventree-wled-stocktree:unregister' loc.id %}" class="btn btn-danger">Unregister</a>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        <p><strong>Max LEDs:</strong> {{ max_leds }}</p>
+        <a href="{% url 'plugin:inventree-wled-stocktree:off' %}" class="btn">Turn Off All LEDs</a>
+
+        <form id="register-led-form" method="post" action="{% url 'plugin:inventree-wled-stocktree:register-simple' %}">
+            {% csrf_token %}
+            <h3>Register LED</h3>
+            <label for="wled_instance_id">WLED Instance ID:</label>
+            <input type="number" id="wled_instance_id" name="wled_instance_id" required>
+            <label for="stocklocation">Stock Location ID:</label>
+            <input type="number" id="stocklocation" name="stocklocation" required>
+            <label for="led">LED Number:</label>
+            <input type="number" id="led" name="led" required>
+            <button type="submit">Register</button>
+        </form>
+    </main>
+</body>
+</html>
