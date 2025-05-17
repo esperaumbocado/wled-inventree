@@ -2,6 +2,8 @@
 
 import json
 import logging
+import time
+import threading
 
 from django.contrib import messages
 from django.contrib.auth import get_user_model
@@ -33,7 +35,7 @@ class WledInventreePlugin(UrlsMixin, LocateMixin, SettingsMixin, InvenTreePlugin
 
     NAME = "WledInventreePlugin"
     SLUG = "inventree-wled-stocktree"
-    TITLE = "WLED Locator"
+    TITLE = "WLED StockTree"
 
     NO_LED_NOTIFICATION = NotificationBody(
         name=_("No location for {verbose_name}"),
@@ -60,21 +62,37 @@ class WledInventreePlugin(UrlsMixin, LocateMixin, SettingsMixin, InvenTreePlugin
     superusers = list(get_user_model().objects.filter(is_superuser=True).all())
 
     def locate_stock_location(self, location_pk):
-        """Locate a StockLocation.
-
-        Args:
-            location_pk: primary key for location
-        """
-        logger.info(f"Attempting to locate location ID {location_pk}")
+        """Locate a StockLocation and its parent (if any), with debug prints."""
+        print(f"[DEBUG] Attempting to locate location ID {location_pk}")
 
         try:
             location = StockLocation.objects.get(pk=location_pk)
-            led_nbr = int(location.get_metadata("wled_led"))
-            if led_nbr is not None:
-                self._set_led(led_nbr)
-            else:
-                # notify superusers that a location has no LED number
-                logger.error(f"Location ID {location_pk} has no WLED LED number!")
+            print(f"[DEBUG] Found location: {location.name} (ID: {location.pk})")
+
+            led_nbr = location.get_metadata("wled_led")
+            print(f"[DEBUG] Location LED metadata: {led_nbr}")
+
+            led_nbr = int(led_nbr) if led_nbr is not None else -1
+
+            parent_led_nbr = None
+            if location.parent:
+                print(f"[DEBUG] Location has parent: {location.parent.name} (ID: {location.parent.pk})")
+                parent_led = location.parent.get_metadata("wled_led")
+                print(f"[DEBUG] Parent LED metadata: {parent_led}")
+
+                if parent_led is not None:
+                    parent_led_nbr = int(parent_led)
+
+            if led_nbr >= 0:
+                print(f"[DEBUG] Lighting up LED {led_nbr} for location {location.name}")
+                self._set_led(led_nbr, turn_off_others=True)  # Only turn on this LED, don't turn off others
+
+            if parent_led_nbr is not None and parent_led_nbr != led_nbr:
+                print(f"[DEBUG] Lighting up LED {parent_led_nbr} for parent location {location.parent.name}")
+                self._set_led(parent_led_nbr, turn_off_others=False)  # Turn off all LEDs before turning on the parent LED
+
+            if led_nbr < 0 and parent_led_nbr is None:
+                print(f"[DEBUG] No LED defined for location {location.name} or its parent.")
                 notify_users(
                     self.superusers,
                     location,
@@ -82,8 +100,12 @@ class WledInventreePlugin(UrlsMixin, LocateMixin, SettingsMixin, InvenTreePlugin
                     content=self.NO_LED_NOTIFICATION,
                 )
 
-        except (ValueError, StockLocation.DoesNotExist):  # pragma: no cover
-            logger.error(f"Location ID {location_pk} does not exist!")
+        except StockLocation.DoesNotExist:
+            print(f"[DEBUG] Location ID {location_pk} does not exist!")
+        except ValueError as e:
+            print(f"[DEBUG] Invalid LED value: {e}")
+
+
 
     def locate_stock_item(self, item_pk):
         """Localiza um StockItem e ativa a localização.
@@ -230,34 +252,52 @@ class WledInventreePlugin(UrlsMixin, LocateMixin, SettingsMixin, InvenTreePlugin
         </script>
         """
 
-    def _set_led(self, target_led: int = None, request=None):
-        """Turn on a specific LED."""
+    @staticmethod
+    def turn_off_led(base_url, target_led):
+        """Turn off a specific LED after 10 seconds."""
+        time.sleep(10)  # Wait for 10 seconds
+        color_black = "000000"
+        requests.post(
+            base_url,
+            json={"seg": {"i": [target_led, color_black]}},
+            timeout=3,
+        )
+
+    def _set_led(self, target_led: int = None, request=None, turn_off_others=True):
+        """Turn on a specific LED, optionally turning off other LEDs, and schedule turning it off."""
+        print(f"[DEBUG] turn_off_others: {turn_off_others}")
         address = self.get_setting("ADDRESS")
         max_leds = self.get_setting("MAX_LEDS")
 
-        # Ensure there are settings
         if not address:
             if request:
-                messages.add_message(
-                    request, messages.WARNING, "No IP address set for WLED"
-                )
+                messages.add_message(request, messages.WARNING, "No IP address set for WLED")
             return
 
         base_url = f"http://{address}/json/state"
         color_black = "000000"
         color_marked = "FF0000"
 
-        # Turn off all segments
-        requests.post(
-            base_url,
-            json={"seg": {"i": [0, max_leds, color_black]}},
-            timeout=3,
-        )
+        # If turn_off_others is True, we turn off all LEDs first
+        if turn_off_others:
+            print(f"[DEBUG] Turning off all LEDs before turning on LED {target_led}")
+            requests.post(
+                base_url,
+                json={"seg": {"i": [0, max_leds, color_black]}},
+                timeout=3,
+            )
 
-        # Turn on target led
+        # Turn on the specific target LED
         if target_led is not None:
+            print(f"[DEBUG] Turning on LED {target_led}")
             requests.post(
                 base_url,
                 json={"seg": {"i": [target_led, color_marked]}},
                 timeout=3,
             )
+
+            # Schedule the LED to turn off after 10 seconds
+            threading.Thread(target=self.turn_off_led, args=(base_url, target_led), daemon=True).start()
+
+
+            
