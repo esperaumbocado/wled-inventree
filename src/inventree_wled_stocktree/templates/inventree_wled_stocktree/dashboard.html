@@ -85,6 +85,14 @@
             border-radius: 4px;
             cursor: pointer;
         }
+        form select {
+            width: 100%;
+            padding: 0.5rem;
+            margin-bottom: 1rem;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            background-color: #fff;
+        }
         form button:hover {
             background-color: #005a9e;
         }
@@ -165,8 +173,10 @@
                 <tr>
                     <th>ID</th>
                     <th>Name</th>
-                    <th>WLED Instance</th>
-                    <th>LED</th>
+                    <th>WLED Instance X</th>
+                    <th>LED X</th>
+                    <th> WLED Instance Y</th>
+                    <th>LED Y</th>
                     <th>Actions</th>
                 </tr>
             </thead>
@@ -175,8 +185,10 @@
                 <tr>
                     <td>{{ loc.id }}</td>
                     <td>{{ loc.name }}</td>
-                    <td>{{ loc.instance}}</td>
-                    <td>{{ loc.led }}</td>
+                    <td>{{ loc.instance_x}}</td>
+                    <td>{{ loc.led_x }}</td>
+                    <td>{{ loc.instance_y }}</td>
+                    <td>{{ loc.led_y }}</td>
                     <td>
                         <a href="{% url 'plugin:inventree-wled-stocktree:unregister' loc.id %}" class="btn btn-danger">Unregister</a>
                     </td>
@@ -189,13 +201,33 @@
 
         <form id="register-led-form" method="post" action="{% url 'plugin:inventree-wled-stocktree:register-simple' %}">
             {% csrf_token %}
-            <h3>Register LED</h3>
-            <label for="wled_instance_id">WLED Instance ID:</label>
-            <input type="number" id="wled_instance_id" name="wled_instance_id" required>
+            <h3>Register LED(s)</h3>
+
             <label for="stocklocation">Stock Location ID:</label>
-            <input type="number" id="stocklocation" name="stocklocation" required>
-            <label for="led">LED Number:</label>
-            <input type="number" id="led" name="led" required>
+            <input type="number" id="stocklocation" name="stocklocation" placeholder="Enter stock location ID" required>
+
+            <label for="wled_instance_id_x">WLED Instance for LED X:</label>
+            <select id="wled_instance_id_x" name="wled_instance_id_x" required>
+                <option value="">Select instance</option>
+                {% for inst in wled_instances %}
+                <option value="{{ inst.id }}">{{ inst.ip }}</option>
+                {% endfor %}
+            </select>
+
+            <label for="led_x">LED X Number:</label>
+            <input type="number" id="led_x" name="led_x" placeholder="Enter LED X number" required>
+
+            <label for="wled_instance_id_y">WLED Instance for LED Y (optional):</label>
+            <select id="wled_instance_id_y" name="wled_instance_id_y">
+                <option value="">Select instance</option>
+                {% for inst in wled_instances %}
+                <option value="{{ inst.id }}">{{ inst.ip }}</option>
+                {% endfor %}
+            </select>
+
+            <label for="led_y">LED Y Number (optional):</label>
+            <input type="number" id="led_y" name="led_y" placeholder="Enter LED Y number">
+
             <button type="submit">Register</button>
         </form>
     </main>

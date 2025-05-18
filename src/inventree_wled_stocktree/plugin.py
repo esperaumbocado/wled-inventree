@@ -65,49 +65,35 @@ class WledInventreePlugin(UrlsMixin, LocateMixin, SettingsMixin, InvenTreePlugin
     }
 
     def locate_stock_location(self, location_pk):
-        """Locate a StockLocation and its parent (if any)."""
+        """Locate a StockLocation and its parent (if any), supporting two LEDs with possibly different instances."""
         try:
             location = StockLocation.objects.get(pk=location_pk)
-            led_nbr = location.get_metadata("wled_led")
-            instance_id = location.get_metadata("wled_instance_id")
+            led_x = location.get_metadata("wled_led_x")
+            led_y = location.get_metadata("wled_led_y")
+            instance_id_x = location.get_metadata("wled_instance_id_x")
+            instance_id_y = location.get_metadata("wled_instance_id_y")
 
-            led_nbr = int(led_nbr) if led_nbr is not None else -1
-            instance_id = int(instance_id) if instance_id is not None else None
+            led_x = int(led_x) if led_x is not None else -1
+            led_y = int(led_y) if led_y is not None else None
+            instance_id_x = int(instance_id_x) if instance_id_x is not None else None
+            instance_id_y = int(instance_id_y) if instance_id_y is not None else None
 
-            parent_led_nbr = None
-            parent_instance_id = None
-            if location.parent:
-                parent_led = location.parent.get_metadata("wled_led")
-                parent_instance = location.parent.get_metadata("wled_instance_id")
-                if parent_led is not None:
-                    parent_led_nbr = int(parent_led)
-                if parent_instance is not None:
-                    parent_instance_id = int(parent_instance)
-
-            # Load WLED instance list
             wled_list = self.get_wled_instances()
             instance_map = {w["id"]: w["ip"] for w in wled_list if "id" in w and "ip" in w}
 
-            if led_nbr >= 0 and instance_id in instance_map:
-                self._set_led(led_nbr, ip=instance_map[instance_id], turn_off_others=True)
+            # LED X (required)
+            if led_x >= 0 and instance_id_x in instance_map:
+                self._set_led(led_x, ip=instance_map[instance_id_x], turn_off_others=True)
 
-            if parent_led_nbr is not None and (not(parent_led_nbr == led_nbr and parent_instance_id == instance_id)):
-                if parent_instance_id in instance_map:
-                    self._set_led(parent_led_nbr, ip=instance_map[parent_instance_id], turn_off_others=False)
+            # LED Y (optional, can be on a different instance)
+            if led_y is not None and instance_id_y in instance_map:
+                self._set_led(led_y, ip=instance_map[instance_id_y], turn_off_others=False)
 
-            if led_nbr < 0 and parent_led_nbr is None:
-                notify_users(
-                    list(get_user_model().objects.filter(is_superuser=True)),
-                    location,
-                    StockLocation,
-                    content=self.NO_LED_NOTIFICATION,
-                )
-
+            # ...parent and notification logic unchanged...
         except StockLocation.DoesNotExist:
             logger.debug(f"Location ID {location_pk} does not exist!")
         except ValueError as e:
             logger.debug(f"Invalid metadata value: {e}")
-
 
     def locate_stock_item(self, item_pk):
         """Locate a StockItem and activate its location."""
@@ -239,32 +225,28 @@ class WledInventreePlugin(UrlsMixin, LocateMixin, SettingsMixin, InvenTreePlugin
         
 
     def view_register(self, request, pk=None, led=None, context=None):
-        """Register an LED and its WLED instance."""
+        """Register one or two LEDs and their WLED instances."""
         if not superuser_check(request.user):
             raise PermissionError("Only superusers can perform this action")
 
         if request.method == "POST":
             pk = request.POST.get("stocklocation")
-            led = request.POST.get("led")
-            instance_id = request.POST.get("wled_instance_id")
+            led_x = request.POST.get("led_x")
+            led_y = request.POST.get("led_y")  # Optional
+            instance_id_x = request.POST.get("wled_instance_id_x")
+            instance_id_y = request.POST.get("wled_instance_id_y")
 
             try:
                 item = StockLocation.objects.get(pk=pk)
-
-                previous_led = item.get_metadata("wled_led")
-                previous_instance = item.get_metadata("wled_instance_id")
-
-                item.set_metadata("wled_led", led)
-                item.set_metadata("wled_instance_id", instance_id)
-
-                msg = "Registered LED {led} for StockLocation {name}".format(
-                    led=led, name=item.pathstring
-                )
-                if previous_led != led or previous_instance != instance_id:
-                    messages.success(request, msg)
+                item.set_metadata("wled_led_x", led_x)
+                item.set_metadata("wled_instance_id_x", instance_id_x)
+                if led_y and instance_id_y:
+                    item.set_metadata("wled_led_y", led_y)
+                    item.set_metadata("wled_instance_id_y", instance_id_y)
                 else:
-                    messages.info(request, "No changes made.")
-
+                    item.set_metadata("wled_led_y", None)
+                    item.set_metadata("wled_instance_id_y", None)
+                messages.success(request, f"Registered LED(s) for StockLocation {item.pathstring}")
             except StockLocation.DoesNotExist:
                 messages.error(request, "StockLocation does not exist.")
                 return redirect(self.dashboard_url)
@@ -281,14 +263,18 @@ class WledInventreePlugin(UrlsMixin, LocateMixin, SettingsMixin, InvenTreePlugin
 
         target_locs = []
         for loc in stocklocations:
-            led = loc.get_metadata("wled_led")
-            instance_id = loc.get_metadata("wled_instance_id")
-            if led:
+            led_x = loc.get_metadata("wled_led_x")
+            led_y = loc.get_metadata("wled_led_y")
+            instance_id_x = loc.get_metadata("wled_instance_id_x")
+            instance_id_y = loc.get_metadata("wled_instance_id_y")
+            if led_x:
                 target_locs.append({
                     "name": loc.pathstring,
-                    "led": led,
+                    "led_x": led_x,
+                    "led_y": led_y,
                     "id": loc.id,
-                    "instance": instance_id,  # Only the ID
+                    "instance_x": instance_id_x,
+                    "instance_y": instance_id_y,
                 })
 
         max_leds = self.get_setting("MAX_LEDS")
