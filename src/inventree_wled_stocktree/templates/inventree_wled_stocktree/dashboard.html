@@ -174,9 +174,11 @@
                     <th>ID</th>
                     <th>Name</th>
                     <th>WLED Instance X</th>
-                    <th>LED X</th>
-                    <th> WLED Instance Y</th>
-                    <th>LED Y</th>
+                    <th>X Min</th>
+                    <th>X Max</th>
+                    <th>WLED Instance Y</th>
+                    <th>Y Min</th>
+                    <th>Y Max</th>
                     <th>Actions</th>
                 </tr>
             </thead>
@@ -185,10 +187,12 @@
                 <tr>
                     <td>{{ loc.id }}</td>
                     <td>{{ loc.name }}</td>
-                    <td>{{ loc.instance_x}}</td>
-                    <td>{{ loc.led_x }}</td>
+                    <td>{{ loc.instance_x }}</td>
+                    <td>{{ loc.x_min }}</td>
+                    <td>{{ loc.x_max }}</td>
                     <td>{{ loc.instance_y }}</td>
-                    <td>{{ loc.led_y }}</td>
+                    <td>{{ loc.y_min }}</td>
+                    <td>{{ loc.y_max }}</td>
                     <td>
                         <a href="{% url 'plugin:inventree-wled-stocktree:unregister' loc.id %}" class="btn btn-danger">Unregister</a>
                     </td>
@@ -201,12 +205,12 @@
 
         <form id="register-led-form" method="post" action="{% url 'plugin:inventree-wled-stocktree:register-simple' %}">
             {% csrf_token %}
-            <h3>Register LED(s)</h3>
+            <h3>Register LED Range(s)</h3>
 
             <label for="stocklocation">Stock Location ID:</label>
             <input type="number" id="stocklocation" name="stocklocation" placeholder="Enter stock location ID" required>
 
-            <label for="wled_instance_id_x">WLED Instance for LED X:</label>
+            <label for="wled_instance_id_x">WLED Instance for X:</label>
             <select id="wled_instance_id_x" name="wled_instance_id_x" required>
                 <option value="">Select instance</option>
                 {% for inst in wled_instances %}
@@ -214,10 +218,13 @@
                 {% endfor %}
             </select>
 
-            <label for="led_x">LED X Number:</label>
-            <input type="number" id="led_x" name="led_x" placeholder="Enter LED X number" required>
+            <label for="x_min">X Min:</label>
+            <input type="number" id="x_min" name="x_min" placeholder="Enter X min" required>
 
-            <label for="wled_instance_id_y">WLED Instance for LED Y (optional):</label>
+            <label for="x_max">X Max:</label>
+            <input type="number" id="x_max" name="x_max" placeholder="Enter X max" required>
+
+            <label for="wled_instance_id_y">WLED Instance for Y (optional):</label>
             <select id="wled_instance_id_y" name="wled_instance_id_y">
                 <option value="">Select instance</option>
                 {% for inst in wled_instances %}
@@ -225,8 +232,11 @@
                 {% endfor %}
             </select>
 
-            <label for="led_y">LED Y Number (optional):</label>
-            <input type="number" id="led_y" name="led_y" placeholder="Enter LED Y number">
+            <label for="y_min">Y Min (optional):</label>
+            <input type="number" id="y_min" name="y_min" placeholder="Enter Y min">
+
+            <label for="y_max">Y Max (optional):</label>
+            <input type="number" id="y_max" name="y_max" placeholder="Enter Y max">
 
             <button type="submit">Register</button>
         </form>

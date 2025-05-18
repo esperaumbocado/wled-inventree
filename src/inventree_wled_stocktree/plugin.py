@@ -65,29 +65,83 @@ class WledInventreePlugin(UrlsMixin, LocateMixin, SettingsMixin, InvenTreePlugin
     }
 
     def locate_stock_location(self, location_pk):
-        """Locate a StockLocation and its parent (if any), supporting two LEDs with possibly different instances."""
+        """Locate a StockLocation and its parent (if any), supporting two LED ranges with possibly different instances."""
         try:
+            parent = StockLocation.objects.get(pk=location_pk)
+            if parent.parent:
+                parent = parent.parent
             location = StockLocation.objects.get(pk=location_pk)
-            led_x = location.get_metadata("wled_led_x")
-            led_y = location.get_metadata("wled_led_y")
+            x_min = location.get_metadata("wled_x_min")
+            x_max = location.get_metadata("wled_x_max")
+            y_min = location.get_metadata("wled_y_min")
+            y_max = location.get_metadata("wled_y_max")
             instance_id_x = location.get_metadata("wled_instance_id_x")
             instance_id_y = location.get_metadata("wled_instance_id_y")
 
-            led_x = int(led_x) if led_x is not None else -1
-            led_y = int(led_y) if led_y is not None else None
+            x_min = int(x_min) if x_min is not None else None
+            x_max = int(x_max) if x_max is not None else None
+            y_min = int(y_min) if y_min is not None else None
+            y_max = int(y_max) if y_max is not None else None
             instance_id_x = int(instance_id_x) if instance_id_x is not None else None
             instance_id_y = int(instance_id_y) if instance_id_y is not None else None
 
             wled_list = self.get_wled_instances()
             instance_map = {w["id"]: w["ip"] for w in wled_list if "id" in w and "ip" in w}
+            instance_max_leds = {w["id"]: w.get("max_leds", 1) for w in wled_list if "id" in w}
 
-            # LED X (required)
-            if led_x >= 0 and instance_id_x in instance_map:
-                self._set_led(led_x, ip=instance_map[instance_id_x], turn_off_others=True)
+            import threading
 
-            # LED Y (optional, can be on a different instance)
-            if led_y is not None and instance_id_y in instance_map:
-                self._set_led(led_y, ip=instance_map[instance_id_y], turn_off_others=False)
+            def clear_leds(ip, max_leds):
+                try:
+                    requests.post(
+                        f"http://{ip}/json/state",
+                        json={"seg": [{"start": 0, "stop": max_leds, "col": [["000000", "000000", "000000"]]}]},
+                        timeout=3,
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to clear all LEDs on {ip}: {e}")
+
+            threads = []
+            for instance_id, ip in instance_map.items():
+                max_leds = instance_max_leds.get(instance_id, 1)
+                t = threading.Thread(target=clear_leds, args=(ip, max_leds))
+                t.start()
+                threads.append(t)
+
+            for t in threads:
+                t.join()
+
+            # LED X range (required)
+            if x_min is not None and x_max is not None and instance_id_x in instance_map:
+                self._set_leds(
+                    ip=instance_map[instance_id_x],
+                    min_led=x_min,
+                    max_led=x_max,
+                    color="FF0000"
+                )
+
+            # LED Y range (optional, can be on a different instance)
+            if y_min is not None and y_max is not None and instance_id_y in instance_map:
+                self._set_leds(
+                    ip=instance_map[instance_id_y],
+                    min_led=y_min,
+                    max_led=y_max,
+                    color="FF0000"
+                )
+
+            # TURN PARENT LED ON
+            if parent:
+                parent_x_min = int(parent.get_metadata("wled_x_min"))
+                parent_x_max = int(parent.get_metadata("wled_x_max"))
+                parent_instance_id_x = int(parent.get_metadata("wled_instance_id_x"))
+
+                if parent_x_min is not None and parent_x_max is not None and parent_instance_id_x in instance_map:
+                    self._set_leds(
+                        ip=instance_map[parent_instance_id_x],
+                        min_led=parent_x_min,
+                        max_led=parent_x_max,
+                        color="FF0000"
+                    )
 
             # ...parent and notification logic unchanged...
         except StockLocation.DoesNotExist:
@@ -122,7 +176,12 @@ class WledInventreePlugin(UrlsMixin, LocateMixin, SettingsMixin, InvenTreePlugin
 
         try:
             item = StockLocation.objects.get(pk=pk)
-            item.set_metadata("wled_led", None)
+            item.set_metadata("wled_x_min", None)
+            item.set_metadata("wled_x_max", None)
+            item.set_metadata("wled_y_min", None)
+            item.set_metadata("wled_y_max", None)
+            item.set_metadata("wled_instance_id_x", None)
+            item.set_metadata("wled_instance_id_y", None)
         except StockLocation.DoesNotExist:
             pass
         return redirect(self.dashboard_url)
@@ -225,28 +284,33 @@ class WledInventreePlugin(UrlsMixin, LocateMixin, SettingsMixin, InvenTreePlugin
         
 
     def view_register(self, request, pk=None, led=None, context=None):
-        """Register one or two LEDs and their WLED instances."""
+        """Register one or two LED ranges and their WLED instances."""
         if not superuser_check(request.user):
             raise PermissionError("Only superusers can perform this action")
 
         if request.method == "POST":
             pk = request.POST.get("stocklocation")
-            led_x = request.POST.get("led_x")
-            led_y = request.POST.get("led_y")  # Optional
+            x_min = request.POST.get("x_min")
+            x_max = request.POST.get("x_max")
+            y_min = request.POST.get("y_min")
+            y_max = request.POST.get("y_max")
             instance_id_x = request.POST.get("wled_instance_id_x")
             instance_id_y = request.POST.get("wled_instance_id_y")
 
             try:
                 item = StockLocation.objects.get(pk=pk)
-                item.set_metadata("wled_led_x", led_x)
+                item.set_metadata("wled_x_min", x_min)
+                item.set_metadata("wled_x_max", x_max)
                 item.set_metadata("wled_instance_id_x", instance_id_x)
-                if led_y and instance_id_y:
-                    item.set_metadata("wled_led_y", led_y)
+                if y_min and y_max and instance_id_y:
+                    item.set_metadata("wled_y_min", y_min)
+                    item.set_metadata("wled_y_max", y_max)
                     item.set_metadata("wled_instance_id_y", instance_id_y)
                 else:
-                    item.set_metadata("wled_led_y", None)
+                    item.set_metadata("wled_y_min", None)
+                    item.set_metadata("wled_y_max", None)
                     item.set_metadata("wled_instance_id_y", None)
-                messages.success(request, f"Registered LED(s) for StockLocation {item.pathstring}")
+                messages.success(request, f"Registered LED range(s) for StockLocation {item.pathstring}")
             except StockLocation.DoesNotExist:
                 messages.error(request, "StockLocation does not exist.")
                 return redirect(self.dashboard_url)
@@ -263,15 +327,19 @@ class WledInventreePlugin(UrlsMixin, LocateMixin, SettingsMixin, InvenTreePlugin
 
         target_locs = []
         for loc in stocklocations:
-            led_x = loc.get_metadata("wled_led_x")
-            led_y = loc.get_metadata("wled_led_y")
+            x_min = loc.get_metadata("wled_x_min")
+            x_max = loc.get_metadata("wled_x_max")
+            y_min = loc.get_metadata("wled_y_min")
+            y_max = loc.get_metadata("wled_y_max")
             instance_id_x = loc.get_metadata("wled_instance_id_x")
             instance_id_y = loc.get_metadata("wled_instance_id_y")
-            if led_x:
+            if x_min and x_max:
                 target_locs.append({
                     "name": loc.pathstring,
-                    "led_x": led_x,
-                    "led_y": led_y,
+                    "x_min": x_min,
+                    "x_max": x_max,
+                    "y_min": y_min,
+                    "y_max": y_max,
                     "id": loc.id,
                     "instance_x": instance_id_x,
                     "instance_y": instance_id_y,
@@ -354,3 +422,54 @@ class WledInventreePlugin(UrlsMixin, LocateMixin, SettingsMixin, InvenTreePlugin
                 threading.Thread(target=self.turn_off_led, args=(base_url, target_led), daemon=True).start()
             except Exception as e:
                 logger.warning(f"Failed to set LED {target_led} on {ip}: {e}")
+
+
+    def _set_leds(self, ip: str, min_led: int, max_led: int, color: str = "FF0000", request=None):
+        """Set a color on a range of LEDs (min to max) on a given WLED IP."""
+        if not ip:
+            if request:
+                messages.add_message(request, messages.WARNING, "No IP address provided for WLED")
+            return
+
+        if min_led > max_led:
+            if request:
+                messages.add_message(request, messages.ERROR, "Invalid LED range: min > max")
+            return
+
+        base_url = f"http://{ip}/json/state"
+
+        segment = {
+            "start": min_led,
+            "stop": max_led + 1,  # stop is exclusive
+            "col": [color] if isinstance(color, str) else color  # Accept single or list of colors
+        }
+
+        payload = {
+            "seg": [segment]
+        }
+
+        try:
+            response = requests.post(base_url, json=payload, timeout=3)
+            response.raise_for_status()
+        except Exception as e:
+            logger.warning(f"Failed to set LEDs {min_led}-{max_led} on {ip}: {e}")
+            if request:
+                messages.add_message(request, messages.ERROR, f"Failed to set LEDs on {ip}")
+
+        # Optional: turn off the LEDs after a delay
+        def turn_off_range():
+            import time
+            time.sleep(10)
+            off_payload = {
+                "seg": [{
+                    "start": min_led,
+                    "stop": max_led + 1,
+                    "col": ["000000"]
+                }]
+            }
+            try:
+                requests.post(base_url, json=off_payload, timeout=3)
+            except Exception as e:
+                logger.warning(f"Failed to turn off LEDs {min_led}-{max_led} on {ip}: {e}")
+
+        threading.Thread(target=turn_off_range, daemon=True).start()
