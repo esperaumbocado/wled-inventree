@@ -1,0 +1,181 @@
+:root {
+    --bg: #f4f4f9;
+    --text: #333;
+    --primary: #0078d7;
+    --primary-hover: #005a9e;
+    --danger: #d9534f;
+    --danger-hover: #c9302c;
+    --card-bg: #fff;
+    --border: #ddd;
+    --row-hover: #f1f1f1;
+    --row-alt: #f9f9f9;
+}
+
+[data-theme="dark"] {
+    --bg: #1e1e1e;
+    --text: #eee;
+    --primary: #3391ff;
+    --primary-hover: #226dc9;
+    --danger: #e66;
+    --danger-hover: #c33;
+    --card-bg: #2b2b2b;
+    --border: #444;
+    --row-hover: #333;
+    --row-alt: #2a2a2a;
+}
+
+body {
+    font-family: Arial, sans-serif;
+    margin: 0;
+    padding: 0;
+    background-color: var(--bg);
+    color: var(--text);
+}
+
+header {
+    background-color: var(--primary);
+    color: white;
+    padding: 1rem;
+    text-align: center;
+}
+
+main {
+    padding: 2rem;
+    display: flex;
+    flex-direction: column;
+    gap: 2rem;
+}
+
+.section-card {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1.5rem;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 1rem;
+}
+
+th, td {
+    border: 1px solid var(--border);
+    padding: 0.75rem;
+    text-align: left;
+}
+
+th {
+    background-color: var(--primary);
+    color: white;
+}
+
+tr:nth-child(even) {
+    background-color: var(--row-alt);
+}
+
+tr:hover {
+    background-color: var(--row-hover);
+}
+
+.btn {
+    display: inline-block;
+    padding: 0.5rem 1rem;
+    color: white;
+    background-color: var(--primary);
+    text-decoration: none;
+    border-radius: 4px;
+}
+
+.btn:hover {
+    background-color: var(--primary-hover);
+}
+
+.btn-danger {
+    background-color: var(--danger);
+}
+
+.btn-danger:hover {
+    background-color: var(--danger-hover);
+}
+
+form {
+    margin-top: 1rem;
+}
+
+label {
+    display: block;
+    margin-top: 1rem;
+    margin-bottom: 0.3rem;
+}
+
+input, select {
+    width: 100%;
+    padding: 0.5rem;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background-color: var(--card-bg);
+    color: var(--text);
+}
+
+button {
+    margin-top: 1rem;
+    padding: 0.5rem 1rem;
+    background-color: var(--primary);
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+button:hover {
+    background-color: var(--primary-hover);
+}
+
+.table-action-form {
+    display: inline;
+}
+
+.table-action-form button {
+    padding: 0.5rem 1rem;
+    background-color: var(--danger);
+    border: none;
+    border-radius: 4px;
+}
+
+.table-action-form button:hover {
+    background-color: var(--danger-hover);
+}
+
+.alert {
+    padding: 1rem;
+    border-radius: 4px;
+    margin-bottom: 1rem;
+}
+
+.alert.success {
+    background-color: #d4edda;
+    color: #155724;
+}
+
+.alert.error {
+    background-color: #f8d7da;
+    color: #721c24;
+}
+
+@media (min-width: 768px) {
+    .grid-2 {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 2rem;
+    }
+}
+
+/* DARK MODE input, select tweaks */
+[data-theme="dark"] input,
+[data-theme="dark"] select {
+    background-color: #444;
+    color: #eee;
+    border: 1px solid #666;
+}

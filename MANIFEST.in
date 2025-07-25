@@ -1,2 +1,4 @@
 include LICENSE
 include README.md
+recursive-include src/inventree_wled_stocktree/static *
+recursive-include src/inventree_wled_stocktree/templates *

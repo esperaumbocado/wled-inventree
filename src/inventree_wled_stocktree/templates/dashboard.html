@@ -1,0 +1,146 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>WLED Dashboard</title>
+    <link rel="stylesheet" href="{% static 'plugins/inventree-wled-stocktree/styles.css' %}">
+</head>
+<body>
+<header>
+    <h1>WLED StockTree Dashboard</h1>
+    <button onclick="toggleTheme()">Toggle Theme</button>
+</header>
+<main>
+    <!-- Optional Alert Placeholder -->
+    <!-- <div class="alert success">WLED instance added!</div> -->
+
+    <div class="grid-2">
+        <div class="section-card">
+            <h2>Registered WLED Instances</h2>
+            <table>
+                <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>IP Address</th>
+                    <th>Max LEDs</th>
+                    <th>Actions</th>
+                </tr>
+                </thead>
+                <tbody>
+                {% for wled in wled_instances %}
+                    <tr>
+                        <td>{{ wled.id }}</td>
+                        <td>{{ wled.ip }}</td>
+                        <td>{{ wled.max_leds }}</td>
+                        <td>
+                            <a href="{% url 'plugin:inventree-wled-stocktree:unregister-wled' wled.id %}" class="btn btn-danger">Unregister</a>
+                        </td>
+                    </tr>
+                {% empty %}
+                    <tr>
+                        <td colspan="4">No WLED instances registered.</td>
+                    </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <div class="section-card">
+            <h3>Register WLED Instance</h3>
+            <form method="post" action="{% url 'plugin:inventree-wled-stocktree:register-wled' %}">
+                {% csrf_token %}
+                <label for="wled_ip">WLED IP Address</label>
+                <input type="text" id="wled_ip" name="wled_ip" required>
+
+                <label for="wled_max_leds">Max LEDs</label>
+                <input type="number" id="wled_max_leds" name="wled_max_leds" required>
+
+                <button type="submit">Add Instance</button>
+            </form>
+        </div>
+    </div>
+
+    <div class="section-card">
+        <h2>Registered Stock Locations</h2>
+        <table>
+            <thead>
+            <tr>
+                <th>ID</th>
+                <th>Name</th>
+                <th>WLED X</th>
+                <th>X Min</th>
+                <th>X Max</th>
+                <th>WLED Y</th>
+                <th>Y Min</th>
+                <th>Y Max</th>
+                <th>Actions</th>
+            </tr>
+            </thead>
+            <tbody>
+            {% for loc in target_locs %}
+                <tr>
+                    <td>{{ loc.id }}</td>
+                    <td>{{ loc.name }}</td>
+                    <td>{{ loc.instance_x }}</td>
+                    <td>{{ loc.x_min }}</td>
+                    <td>{{ loc.x_max }}</td>
+                    <td>{{ loc.instance_y }}</td>
+                    <td>{{ loc.y_min }}</td>
+                    <td>{{ loc.y_max }}</td>
+                    <td>
+                        <a href="{% url 'plugin:inventree-wled-stocktree:unregister' loc.id %}" class="btn btn-danger">Unregister</a>
+                    </td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        <p><strong>Total Max LEDs:</strong> {{ max_leds }}</p>
+        <a href="{% url 'plugin:inventree-wled-stocktree:off' %}" class="btn">Turn Off All LEDs</a>
+    </div>
+
+    <div class="section-card">
+        <h3>Register LED Range(s) to Location</h3>
+        <form method="post" action="{% url 'plugin:inventree-wled-stocktree:register-simple' %}">
+            {% csrf_token %}
+            <label for="stocklocation">Stock Location ID</label>
+            <input type="number" id="stocklocation" name="stocklocation" required>
+
+            <label for="wled_instance_id_x">WLED Instance for X</label>
+            <select id="wled_instance_id_x" name="wled_instance_id_x" required>
+                <option value="">Select instance</option>
+                {% for inst in wled_instances %}
+                    <option value="{{ inst.id }}">{{ inst.ip }}</option>
+                {% endfor %}
+            </select>
+
+            <label for="x_min">X Min</label>
+            <input type="number" id="x_min" name="x_min" required>
+
+            <label for="x_max">X Max</label>
+            <input type="number" id="x_max" name="x_max" required>
+
+            <label for="wled_instance_id_y">WLED Instance for Y (optional)</label>
+            <select id="wled_instance_id_y" name="wled_instance_id_y" onchange="toggleYFields()">
+                <option value="">No instance selected</option>
+                {% for inst in wled_instances %}
+                    <option value="{{ inst.id }}">{{ inst.ip }}</option>
+                {% endfor %}
+            </select>
+
+            <div id="y_fields" style="display: none;">
+                <label for="y_min">Y Min (optional)</label>
+                <input type="number" id="y_min" name="y_min">
+
+                <label for="y_max">Y Max (optional)</label>
+                <input type="number" id="y_max" name="y_max">
+            </div>
+
+            <button type="submit">Register</button>
+        </form>
+    </div>
+</main>
+<script src="{% static 'plugins/inventree-wled-stocktree/script.js' %}"></script>
+</body>
+</html>

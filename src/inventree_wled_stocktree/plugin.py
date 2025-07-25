@@ -65,33 +65,21 @@ class WledInventreePlugin(UrlsMixin, LocateMixin, SettingsMixin, InvenTreePlugin
     }
 
     def locate_stock_location(self, location_pk):
-        """Locate a StockLocation and its parent (if any), supporting two LED ranges with possibly different instances."""
+        print(f"[DEBUG] locate_stock_location called with location_pk={location_pk}")
         try:
-            parent = StockLocation.objects.get(pk=location_pk)
-            if parent.parent:
-                parent = parent.parent
             location = StockLocation.objects.get(pk=location_pk)
-            x_min = location.get_metadata("wled_x_min")
-            x_max = location.get_metadata("wled_x_max")
-            y_min = location.get_metadata("wled_y_min")
-            y_max = location.get_metadata("wled_y_max")
-            instance_id_x = location.get_metadata("wled_instance_id_x")
-            instance_id_y = location.get_metadata("wled_instance_id_y")
-
-            x_min = int(x_min) if x_min is not None else None
-            x_max = int(x_max) if x_max is not None else None
-            y_min = int(y_min) if y_min is not None else None
-            y_max = int(y_max) if y_max is not None else None
-            instance_id_x = int(instance_id_x) if instance_id_x is not None else None
-            instance_id_y = int(instance_id_y) if instance_id_y is not None else None
-
+            print(f"[DEBUG] Located StockLocation: {location}")
             wled_list = self.get_wled_instances()
+            print(f"[DEBUG] WLED instances: {wled_list}")
             instance_map = {w["id"]: w["ip"] for w in wled_list if "id" in w and "ip" in w}
             instance_max_leds = {w["id"]: w.get("max_leds", 1) for w in wled_list if "id" in w}
+            print(f"[DEBUG] instance_map: {instance_map}")
+            print(f"[DEBUG] instance_max_leds: {instance_max_leds}")
 
+            # --- Clear all LEDs on all instances first (parallel) ---
             import threading
-
             def clear_leds(ip, max_leds):
+                print(f"[DEBUG] Clearing LEDs on {ip} with max_leds={max_leds}")
                 try:
                     requests.post(
                         f"http://{ip}/json/state",
@@ -100,54 +88,97 @@ class WledInventreePlugin(UrlsMixin, LocateMixin, SettingsMixin, InvenTreePlugin
                     )
                 except Exception as e:
                     logger.warning(f"Failed to clear all LEDs on {ip}: {e}")
+                    print(f"[DEBUG] Failed to clear all LEDs on {ip}: {e}")
 
             threads = []
             for instance_id, ip in instance_map.items():
                 max_leds = instance_max_leds.get(instance_id, 1)
+                print(f"[DEBUG] Starting thread to clear LEDs for instance {instance_id} at {ip}")
                 t = threading.Thread(target=clear_leds, args=(ip, max_leds))
                 t.start()
                 threads.append(t)
-
             for t in threads:
                 t.join()
+            print("[DEBUG] All clear_leds threads joined")
 
-            # LED X range (required)
-            if x_min is not None and x_max is not None and instance_id_x in instance_map:
-                self._set_leds(
-                    ip=instance_map[instance_id_x],
-                    min_led=x_min,
-                    max_led=x_max,
-                    color="FF0000"
+            # --- Recursively collect all parent locations (including self) ---
+            def collect_ancestors(loc):
+                print(f"[DEBUG] Collecting ancestors for location: {loc}")
+                result = []
+                while loc is not None:
+                    result.append(loc)
+                    loc = loc.parent
+                print(f"[DEBUG] Ancestors collected: {result[::-1]}")
+                return result[::-1]  # from root to leaf
+
+            ancestors = collect_ancestors(location)
+            print(f"[DEBUG] Ancestors: {ancestors}")
+
+            # --- Build segments for all ancestors ---
+            segments_by_instance = {}
+
+            # All parent layers (except the last, which is the target) will be green
+            for idx, loc in enumerate(ancestors):
+                print(f"[DEBUG] Processing ancestor idx={idx}, loc={loc}")
+                x_min = loc.get_metadata("wled_x_min")
+                x_max = loc.get_metadata("wled_x_max")
+                y_min = loc.get_metadata("wled_y_min")
+                y_max = loc.get_metadata("wled_y_max")
+                instance_id_x = loc.get_metadata("wled_instance_id_x")
+                instance_id_y = loc.get_metadata("wled_instance_id_y")
+                print(f"[DEBUG] Metadata: x_min={x_min}, x_max={x_max}, y_min={y_min}, y_max={y_max}, instance_id_x={instance_id_x}, instance_id_y={instance_id_y}")
+
+                try:
+                    x_min = int(x_min) if x_min is not None else None
+                    x_max = int(x_max) if x_max is not None else None
+                    y_min = int(y_min) if y_min is not None else None
+                    y_max = int(y_max) if y_max is not None else None
+                    instance_id_x = int(instance_id_x) if instance_id_x is not None else None
+                    instance_id_y = int(instance_id_y) if instance_id_y is not None else None
+                except Exception as e:
+                    print(f"[DEBUG] Exception parsing metadata: {e}")
+                    continue
+
+                # Use green for parents, red for the last (target)
+                is_target = (idx == len(ancestors) - 1)
+                color_x = "FF0000" if is_target else "00FF00"
+                color_y = "FF0000" if is_target else "00FF00"
+
+                # X range
+                if x_min is not None and x_max is not None and instance_id_x in instance_map:
+                    print(f"[DEBUG] Adding X segment for instance {instance_id_x}")
+                    segments_by_instance.setdefault(instance_id_x, []).append({
+                        "start": x_min,
+                        "stop": x_max + 1,
+                        "col": [color_x]
+                    })
+
+                # Y range (optional)
+                if y_min is not None and y_max is not None and instance_id_y in instance_map:
+                    print(f"[DEBUG] Adding Y segment for instance {instance_id_y}")
+                    segments_by_instance.setdefault(instance_id_y, []).append({
+                        "start": y_min,
+                        "stop": y_max + 1,
+                        "col": [color_y]
+                    })
+
+            print(f"[DEBUG] segments_by_instance: {segments_by_instance}")
+
+            # --- Send segments to each instance ---
+            for instance_id, segments in segments_by_instance.items():
+                print(f"[DEBUG] Setting LEDs for instance {instance_id} at {instance_map[instance_id]} with segments: {segments}")
+                self.set_leds(
+                    ip=instance_map[instance_id],
+                    segments=segments,
                 )
-
-            # LED Y range (optional, can be on a different instance)
-            if y_min is not None and y_max is not None and instance_id_y in instance_map:
-                self._set_leds(
-                    ip=instance_map[instance_id_y],
-                    min_led=y_min,
-                    max_led=y_max,
-                    color="FF0000"
-                )
-
-            # TURN PARENT LED ON
-            if parent:
-                parent_x_min = int(parent.get_metadata("wled_x_min"))
-                parent_x_max = int(parent.get_metadata("wled_x_max"))
-                parent_instance_id_x = int(parent.get_metadata("wled_instance_id_x"))
-
-                if parent_x_min is not None and parent_x_max is not None and parent_instance_id_x in instance_map:
-                    self._set_leds(
-                        ip=instance_map[parent_instance_id_x],
-                        min_led=parent_x_min,
-                        max_led=parent_x_max,
-                        color="FF0000"
-                    )
 
             # ...parent and notification logic unchanged...
         except StockLocation.DoesNotExist:
             logger.debug(f"Location ID {location_pk} does not exist!")
+            print(f"[DEBUG] Location ID {location_pk} does not exist!")
         except ValueError as e:
             logger.debug(f"Invalid metadata value: {e}")
+            print(f"[DEBUG] Invalid metadata value: {e}")
 
     def locate_stock_item(self, item_pk):
         """Locate a StockItem and activate its location."""
@@ -187,6 +218,7 @@ class WledInventreePlugin(UrlsMixin, LocateMixin, SettingsMixin, InvenTreePlugin
         return redirect(self.dashboard_url)
     
     def view_register_wled(self, request, pk=None, led=None):
+        print("Registering WLED instance")
         # Only superusers allowed
         if not superuser_check(request.user):
             raise PermissionError("Only superusers can perform this action")
@@ -200,7 +232,7 @@ class WledInventreePlugin(UrlsMixin, LocateMixin, SettingsMixin, InvenTreePlugin
         if not wled_ip:
             return JsonResponse({'error': 'Missing WLED IP'}, status=400)
 
-        json_file_path = './wled_instances.json'
+        json_file_path = '/data/wled_instances.json'
 
         # Load existing data
         if os.path.exists(json_file_path):
@@ -233,31 +265,25 @@ class WledInventreePlugin(UrlsMixin, LocateMixin, SettingsMixin, InvenTreePlugin
         })
 
         # Save updated list
+        os.makedirs(os.path.dirname(json_file_path), exist_ok=True)  # Ensure /data exists before writing
         with open(json_file_path, 'w') as f:
             json.dump(wled_list, f, indent=2)
 
+
         return JsonResponse({'success': True, 'wled_list': wled_list})
     
-    def view_unregister_wled(self, request):
+    def view_unregister_wled(self, request, wled_id):
+        print("Unregistering WLED instance with ID:", wled_id)
         # Only superusers allowed
         if not superuser_check(request.user):
             raise PermissionError("Only superusers can perform this action")
-        
-        if request.method != 'POST':
-            return JsonResponse({'error': 'POST method required'}, status=405)
 
-        # Expecting ID for unregistration
-        wled_id = request.POST.get('wled_id')
-        
-        if not wled_id:
-            return JsonResponse({'error': 'Missing WLED ID to unregister'}, status=400)
-        
         try:
             wled_id = int(wled_id)
         except ValueError:
             return JsonResponse({'error': 'WLED ID must be an integer'}, status=400)
 
-        json_file_path = './wled_instances.json'
+        json_file_path = '/data/wled_instances.json'
 
         if not os.path.exists(json_file_path):
             return JsonResponse({'error': 'No WLED instances found'}, status=404)
@@ -276,10 +302,13 @@ class WledInventreePlugin(UrlsMixin, LocateMixin, SettingsMixin, InvenTreePlugin
         if len(wled_list) == original_len:
             return JsonResponse({'error': 'No matching WLED instance found with given ID'}, status=404)
 
+        os.makedirs(os.path.dirname(json_file_path), exist_ok=True)  # Ensure /data exists before writing
         with open(json_file_path, 'w') as f:
             json.dump(wled_list, f, indent=2)
 
+
         return JsonResponse({'success': True, 'wled_list': wled_list})
+
 
         
 
@@ -347,7 +376,7 @@ class WledInventreePlugin(UrlsMixin, LocateMixin, SettingsMixin, InvenTreePlugin
 
         max_leds = self.get_setting("MAX_LEDS")
 
-        return render(request, 'inventree_wled_stocktree/dashboard.html', {
+        return render(request, 'dashboard.html', {
             'target_locs': target_locs,
             'max_leds': max_leds,
             'wled_instances': wled_instances,
@@ -356,27 +385,30 @@ class WledInventreePlugin(UrlsMixin, LocateMixin, SettingsMixin, InvenTreePlugin
 
     
     def get_wled_instances(self):
-        json_file_path = './wled_instances.json'  # Adjust this path
+        json_file_path = '/data/wled_instances.json'
+        os.makedirs(os.path.dirname(json_file_path), exist_ok=True)
         
         if not os.path.exists(json_file_path):
+            print(f"[DEBUG] WLED instances file not found at {json_file_path}")
             return []
         
         try:
             with open(json_file_path, 'r') as f:
                 wled_list = json.load(f)
+                print(f"[DEBUG] Loaded WLED instances from {json_file_path}: {wled_list}")
                 return wled_list
         except (json.JSONDecodeError, IOError):
+            print(f"[DEBUG] Error reading WLED instances file at {json_file_path}")
             return []
 
     def setup_urls(self):
-        """Return the URLs defined by this plugin."""
         return [
-            re_path(r"settings", self.view_dashboard, name="dashboard"),
-            re_path(r"off/", self.view_off, name="off"),
-            re_path(r"unregister/(?P<pk>\d+)/", self.view_unregister, name="unregister"),
-            re_path(r"register/", self.view_register, name="register-simple"),
-            re_path(r"register-wled/", self.view_register_wled, name="register-wled"),
-            re_path(r"unregister-wled/", self.view_unregister_wled, name="unregister-wled"),
+            re_path(r"^settings$", self.view_dashboard, name="dashboard"),
+            re_path(r"^off/$", self.view_off, name="off"),
+            re_path(r"^unregister/(?P<pk>\d+)/$", self.view_unregister, name="unregister"),
+            re_path(r"^register/$", self.view_register, name="register-simple"),
+            re_path(r"^register-wled/$", self.view_register_wled, name="register-wled"),
+            re_path(r"^unregister-wled/(?P<wled_id>\d+)/$", self.view_unregister_wled, name="unregister-wled"),
         ]
 
     @staticmethod
@@ -391,12 +423,15 @@ class WledInventreePlugin(UrlsMixin, LocateMixin, SettingsMixin, InvenTreePlugin
 
     def _set_led(self, target_led: int = None, ip: str = None, request=None, turn_off_others=True):
         """Turn on a specific LED on a given WLED IP."""
+        debug_log(f"_set_led called with target_led={target_led}, ip={ip}, turn_off_others={turn_off_others}")
         if not ip:
+            debug_log("No IP address provided for WLED")
             if request:
                 messages.add_message(request, messages.WARNING, "No IP address provided for WLED")
             return
 
         max_leds = self.get_setting("MAX_LEDS")
+        debug_log(f"max_leds from settings: {max_leds}")
 
         base_url = f"http://{ip}/json/state"
         color_black = "000000"
@@ -404,6 +439,7 @@ class WledInventreePlugin(UrlsMixin, LocateMixin, SettingsMixin, InvenTreePlugin
 
         if turn_off_others:
             try:
+                debug_log(f"Turning off all LEDs on {ip}")
                 requests.post(
                     base_url,
                     json={"seg": {"i": [0, max_leds, color_black]}},
@@ -411,9 +447,11 @@ class WledInventreePlugin(UrlsMixin, LocateMixin, SettingsMixin, InvenTreePlugin
                 )
             except Exception as e:
                 logger.warning(f"Failed to reset all LEDs on {ip}: {e}")
+                debug_log(f"Exception while turning off all LEDs: {e}")
 
         if target_led is not None:
             try:
+                debug_log(f"Setting LED {target_led} on {ip} to {color_marked}")
                 requests.post(
                     base_url,
                     json={"seg": {"i": [target_led, color_marked]}},
@@ -422,54 +460,56 @@ class WledInventreePlugin(UrlsMixin, LocateMixin, SettingsMixin, InvenTreePlugin
                 threading.Thread(target=self.turn_off_led, args=(base_url, target_led), daemon=True).start()
             except Exception as e:
                 logger.warning(f"Failed to set LED {target_led} on {ip}: {e}")
+                debug_log(f"Exception while setting LED {target_led}: {e}")
 
-
-    def _set_leds(self, ip: str, min_led: int, max_led: int, color: str = "FF0000", request=None):
+    def set_leds(self, ip: str, segments: list, request=None):
         """Set a color on a range of LEDs (min to max) on a given WLED IP."""
+        debug_log(f"set_leds called with ip={ip}, segments={segments}")
         if not ip:
+            debug_log("No IP address provided for WLED")
             if request:
                 messages.add_message(request, messages.WARNING, "No IP address provided for WLED")
             return
 
-        if min_led > max_led:
-            if request:
-                messages.add_message(request, messages.ERROR, "Invalid LED range: min > max")
-            return
-
         base_url = f"http://{ip}/json/state"
 
-        segment = {
-            "start": min_led,
-            "stop": max_led + 1,  # stop is exclusive
-            "col": [color] if isinstance(color, str) else color  # Accept single or list of colors
-        }
-
         payload = {
-            "seg": [segment]
+            "seg": segments
         }
+        debug_log(f"Sending payload to {base_url}: {payload}")
 
         try:
             response = requests.post(base_url, json=payload, timeout=3)
+            debug_log(f"Response status code: {response.status_code}")
             response.raise_for_status()
         except Exception as e:
-            logger.warning(f"Failed to set LEDs {min_led}-{max_led} on {ip}: {e}")
+            logger.warning(f"Failed to set LEDs on {ip}: {e}")
+            debug_log(f"Exception while setting LEDs: {e}")
             if request:
                 messages.add_message(request, messages.ERROR, f"Failed to set LEDs on {ip}")
 
-        # Optional: turn off the LEDs after a delay
+        # Optional: turn off the LEDs after a delay using the same segments
         def turn_off_range():
             import time
+            debug_log(f"Sleeping 10s before turning off segments on {ip}")
             time.sleep(10)
-            off_payload = {
-                "seg": [{
-                    "start": min_led,
-                    "stop": max_led + 1,
-                    "col": ["000000"]
-                }]
-            }
+            off_segments = []
+            for seg in segments:
+                off_seg = seg.copy()
+                off_seg["col"] = ["000000"]
+                off_segments.append(off_seg)
+            off_payload = {"seg": off_segments}
             try:
+                debug_log(f"Turning off segments on {ip} with payload: {off_payload}")
                 requests.post(base_url, json=off_payload, timeout=3)
             except Exception as e:
-                logger.warning(f"Failed to turn off LEDs {min_led}-{max_led} on {ip}: {e}")
+                logger.warning(f"Failed to turn off segments on {ip}: {e}")
+                debug_log(f"Exception while turning off segments: {e}")
 
         threading.Thread(target=turn_off_range, daemon=True).start()
+
+def debug_log(message):
+    """Append debug messages to a log file."""
+    log_path = "/tmp/wled_inventree_debug.txt"  # Change path as needed
+    with open(log_path, "a") as f:
+        f.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} {message}\n")

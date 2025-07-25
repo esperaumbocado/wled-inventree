@@ -4,10 +4,10 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "inventree-wled-stocktree"
-version =  "0.5.2.16"
+version =  "0.5.3.9"
 description= "Use WLED to locate InvenTree StockLocations and StockItems."
 readme = "README.md"
-license = {text = "MIT license"}
+license = "MIT"
 keywords = ["inventree", "inventree-plugin", "inventree-wled-locator"]
 authors = [
     {name = "Matthias Mair", email =  "code@mjmair.com"},
@@ -23,7 +23,6 @@ classifiers=[
     "Intended Audience :: Manufacturing",
     "Intended Audience :: End Users/Desktop",
     "Topic :: Scientific/Engineering",
-    'License :: OSI Approved :: MIT License',
 ]
 requires-python=">=3.9"
 dependencies = ['django', 'requests']
@@ -41,6 +40,12 @@ inventree-wled-stocktree = "inventree_wled_stocktree:WledInventreePlugin"
 [tool.setuptools.packages.find]
 where = ["src"]
 include = ["inventree_wled_stocktree"]
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.package-data]
+"inventree_wled_stocktree" = ["static/*", "templates/*"]
 
 [tool.ruff]
 exclude=[".git","__pycache__","dist","build","test.py","tests", "venv","env",".venv",".env"]
