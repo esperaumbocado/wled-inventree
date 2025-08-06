@@ -9,6 +9,7 @@ import os
 from django.contrib import messages
 from django.contrib.auth import get_user_model
 from django.core.validators import MinValueValidator
+from django.db import models
 from django.http import JsonResponse, HttpResponse
 from django.shortcuts import redirect, render
 from django.urls import re_path, reverse
@@ -20,7 +21,9 @@ from stock.models import StockLocation, StockItem
 from common.notifications import NotificationBody
 from InvenTree.helpers_model import notify_users
 from plugin import InvenTreePlugin
-from plugin.mixins import LocateMixin, SettingsMixin, UrlsMixin
+from plugin.mixins import AppMixin, LocateMixin, SettingsMixin, UrlsMixin
+
+from .models import WledInstance
 
 logger = logging.getLogger("inventree")
 
@@ -30,7 +33,7 @@ def superuser_check(user):
     return user.is_superuser
 
 
-class WledInventreePlugin(UrlsMixin, LocateMixin, SettingsMixin, InvenTreePlugin):
+class WledInventreePlugin(AppMixin, UrlsMixin, LocateMixin, SettingsMixin, InvenTreePlugin):
     """Use WLED to locate InvenTree StockLocations."""
 
     @property
@@ -227,50 +230,73 @@ class WledInventreePlugin(UrlsMixin, LocateMixin, SettingsMixin, InvenTreePlugin
             return JsonResponse({'error': 'POST method required'}, status=405)
 
         wled_ip = request.POST.get('wled_ip')
+        wled_name = request.POST.get('wled_name', '')
         wled_max_leds = request.POST.get('wled_max_leds', 1)
 
         if not wled_ip:
             return JsonResponse({'error': 'Missing WLED IP'}, status=400)
 
-        json_file_path = '/data/wled_instances.json'
+        # Check for duplicate IP
+        if WledInstance.objects.filter(ip_address=wled_ip).exists():
+            return JsonResponse({'error': 'WLED with this IP already registered'}, status=400)
 
-        # Load existing data
-        if os.path.exists(json_file_path):
-            with open(json_file_path, 'r') as f:
-                try:
-                    wled_list = json.load(f)
-                except json.JSONDecodeError:
-                    wled_list = []
-        else:
-            wled_list = []
+        # Get next available ID
+        last_instance = WledInstance.objects.order_by('-wled_id').first()
+        new_id = (last_instance.wled_id + 1) if last_instance else 1
 
-        # Prevent duplicate IP registration
-        for wled in wled_list:
-            if wled.get('ip') == wled_ip:
+        # Create new instance
+        try:
+            instance = WledInstance.objects.create(
+                wled_id=new_id,
+                name=wled_name,
+                ip_address=wled_ip,
+                max_leds=int(wled_max_leds)
+            )
+            print(f"[DEBUG] Created WLED instance: {instance}")
+        except Exception as e:
+            return JsonResponse({'error': f'Failed to create WLED instance: {str(e)}'}, status=500)
+
+        wled_list = self.get_wled_instances()
+        return JsonResponse({'success': True, 'wled_list': wled_list})
+    
+    def view_edit_wled(self, request, wled_id):
+        print(f"Editing WLED instance with ID: {wled_id}")
+        # Only superusers allowed
+        if not superuser_check(request.user):
+            raise PermissionError("Only superusers can perform this action")
+
+        if request.method != 'POST':
+            return JsonResponse({'error': 'POST method required'}, status=405)
+
+        try:
+            wled_id = int(wled_id)
+            instance = WledInstance.objects.get(wled_id=wled_id)
+            
+            wled_ip = request.POST.get('wled_ip')
+            wled_name = request.POST.get('wled_name', '')
+            wled_max_leds = request.POST.get('wled_max_leds')
+
+            if not wled_ip:
+                return JsonResponse({'error': 'Missing WLED IP'}, status=400)
+
+            # Check for duplicate IP (excluding current instance)
+            if WledInstance.objects.filter(ip_address=wled_ip).exclude(wled_id=wled_id).exists():
                 return JsonResponse({'error': 'WLED with this IP already registered'}, status=400)
 
-        # Determine new ID
-        if wled_list:
-            last_id = max(w.get('id', 0) for w in wled_list)
-        else:
-            last_id = 0
-
-        new_id = last_id + 1
-
-        # Add new instance
-        wled_list.append({
-            'id': new_id,
-            'ip': wled_ip,
-            'max_leds': int(wled_max_leds)
-        })
-
-        # Save updated list
-        os.makedirs(os.path.dirname(json_file_path), exist_ok=True)  # Ensure /data exists before writing
-        with open(json_file_path, 'w') as f:
-            json.dump(wled_list, f, indent=2)
-
-
-        return JsonResponse({'success': True, 'wled_list': wled_list})
+            # Update instance
+            instance.name = wled_name
+            instance.ip_address = wled_ip
+            instance.max_leds = int(wled_max_leds)
+            instance.save()
+            
+            print(f"[DEBUG] Updated WLED instance: {instance}")
+            
+            wled_list = self.get_wled_instances()
+            return JsonResponse({'success': True, 'wled_list': wled_list})
+        except (ValueError, WledInstance.DoesNotExist):
+            return JsonResponse({'error': 'No matching WLED instance found'}, status=404)
+        except Exception as e:
+            return JsonResponse({'error': f'Failed to update WLED instance: {str(e)}'}, status=500)
     
     def view_unregister_wled(self, request, wled_id):
         print("Unregistering WLED instance with ID:", wled_id)
@@ -280,34 +306,84 @@ class WledInventreePlugin(UrlsMixin, LocateMixin, SettingsMixin, InvenTreePlugin
 
         try:
             wled_id = int(wled_id)
-        except ValueError:
-            return JsonResponse({'error': 'WLED ID must be an integer'}, status=400)
+            instance = WledInstance.objects.get(wled_id=wled_id)
+            
+            # Find all locations using this instance and clean up their metadata
+            all_locations = StockLocation.objects.all()
+            for location in all_locations:
+                instance_id_x = location.get_metadata("wled_instance_id_x")
+                instance_id_y = location.get_metadata("wled_instance_id_y")
+                
+                # Clear metadata if this location uses the instance being deleted
+                if instance_id_x and int(instance_id_x) == wled_id:
+                    location.set_metadata("wled_x_min", None)
+                    location.set_metadata("wled_x_max", None)
+                    location.set_metadata("wled_instance_id_x", None)
+                    print(f"[DEBUG] Cleared X-axis metadata for location {location.id}")
+                
+                if instance_id_y and int(instance_id_y) == wled_id:
+                    location.set_metadata("wled_y_min", None)
+                    location.set_metadata("wled_y_max", None)
+                    location.set_metadata("wled_instance_id_y", None)
+                    print(f"[DEBUG] Cleared Y-axis metadata for location {location.id}")
+            
+            instance.delete()
+            print(f"[DEBUG] Deleted WLED instance with ID: {wled_id}")
+            
+            wled_list = self.get_wled_instances()
+            return JsonResponse({'success': True, 'wled_list': wled_list})
+        except (ValueError, WledInstance.DoesNotExist):
+            return JsonResponse({'error': 'No matching WLED instance found'}, status=404)
+        except Exception as e:
+            return JsonResponse({'error': f'Failed to delete WLED instance: {str(e)}'}, status=500)
 
-        json_file_path = '/data/wled_instances.json'
+    def view_edit_location(self, request, location_id):
+        print(f"Editing location with ID: {location_id}")
+        # Only superusers allowed
+        if not superuser_check(request.user):
+            raise PermissionError("Only superusers can perform this action")
 
-        if not os.path.exists(json_file_path):
-            return JsonResponse({'error': 'No WLED instances found'}, status=404)
+        if request.method != 'POST':
+            return JsonResponse({'error': 'POST method required'}, status=405)
 
-        with open(json_file_path, 'r') as f:
-            try:
-                wled_list = json.load(f)
-            except json.JSONDecodeError:
-                wled_list = []
+        try:
+            location = StockLocation.objects.get(pk=location_id)
+            
+            x_min = request.POST.get("x_min")
+            x_max = request.POST.get("x_max")
+            y_min = request.POST.get("y_min")
+            y_max = request.POST.get("y_max")
+            instance_id_x = request.POST.get("wled_instance_id_x")
+            instance_id_y = request.POST.get("wled_instance_id_y")
 
-        original_len = len(wled_list)
+            # Validate that the instances exist
+            if instance_id_x and not WledInstance.objects.filter(wled_id=int(instance_id_x)).exists():
+                return JsonResponse({'error': 'X-axis WLED instance does not exist'}, status=400)
+            
+            if instance_id_y and not WledInstance.objects.filter(wled_id=int(instance_id_y)).exists():
+                return JsonResponse({'error': 'Y-axis WLED instance does not exist'}, status=400)
 
-        # Filter out the instance with the matching ID
-        wled_list = [w for w in wled_list if w.get('id') != wled_id]
-
-        if len(wled_list) == original_len:
-            return JsonResponse({'error': 'No matching WLED instance found with given ID'}, status=404)
-
-        os.makedirs(os.path.dirname(json_file_path), exist_ok=True)  # Ensure /data exists before writing
-        with open(json_file_path, 'w') as f:
-            json.dump(wled_list, f, indent=2)
-
-
-        return JsonResponse({'success': True, 'wled_list': wled_list})
+            # Update metadata
+            location.set_metadata("wled_x_min", x_min)
+            location.set_metadata("wled_x_max", x_max)
+            location.set_metadata("wled_instance_id_x", instance_id_x)
+            
+            if y_min and y_max and instance_id_y:
+                location.set_metadata("wled_y_min", y_min)
+                location.set_metadata("wled_y_max", y_max)
+                location.set_metadata("wled_instance_id_y", instance_id_y)
+            else:
+                location.set_metadata("wled_y_min", None)
+                location.set_metadata("wled_y_max", None)
+                location.set_metadata("wled_instance_id_y", None)
+            
+            print(f"[DEBUG] Updated location {location.id} metadata")
+            return JsonResponse({'success': True, 'message': f'Updated LED mapping for {location.pathstring}'})
+            
+        except StockLocation.DoesNotExist:
+            return JsonResponse({'error': 'Location does not exist'}, status=404)
+        except Exception as e:
+            return JsonResponse({'error': f'Failed to update location: {str(e)}'}, status=500)
 
 
         
@@ -351,11 +427,13 @@ class WledInventreePlugin(UrlsMixin, LocateMixin, SettingsMixin, InvenTreePlugin
         if not superuser_check(request.user):
             raise PermissionError("Only superusers can view the LED dashboard")
 
-        stocklocations = StockLocation.objects.filter(metadata__isnull=False)
+        # Get all stock locations (both mapped and unmapped)
+        all_stocklocations = StockLocation.objects.all()
+        mapped_stocklocations = StockLocation.objects.filter(metadata__isnull=False)
         wled_instances = self.get_wled_instances()
 
         target_locs = []
-        for loc in stocklocations:
+        for loc in mapped_stocklocations:
             x_min = loc.get_metadata("wled_x_min")
             x_max = loc.get_metadata("wled_x_max")
             y_min = loc.get_metadata("wled_y_min")
@@ -376,8 +454,13 @@ class WledInventreePlugin(UrlsMixin, LocateMixin, SettingsMixin, InvenTreePlugin
 
         max_leds = self.get_setting("MAX_LEDS")
 
+        print(f"[DEBUG] Template context - wled_instances: {wled_instances}")
+        for inst in wled_instances:
+            print(f"[DEBUG] Instance: {inst}")
+
         return render(request, 'dashboard.html', {
             'target_locs': target_locs,
+            'all_stocklocations': all_stocklocations,
             'max_leds': max_leds,
             'wled_instances': wled_instances,
         })
@@ -385,20 +468,23 @@ class WledInventreePlugin(UrlsMixin, LocateMixin, SettingsMixin, InvenTreePlugin
 
     
     def get_wled_instances(self):
-        json_file_path = '/data/wled_instances.json'
-        os.makedirs(os.path.dirname(json_file_path), exist_ok=True)
-        
-        if not os.path.exists(json_file_path):
-            print(f"[DEBUG] WLED instances file not found at {json_file_path}")
-            return []
-        
+        """Get WLED instances from database."""
         try:
-            with open(json_file_path, 'r') as f:
-                wled_list = json.load(f)
-                print(f"[DEBUG] Loaded WLED instances from {json_file_path}: {wled_list}")
-                return wled_list
-        except (json.JSONDecodeError, IOError):
-            print(f"[DEBUG] Error reading WLED instances file at {json_file_path}")
+            instances = WledInstance.objects.all()
+            wled_list = [
+                {
+                    'id': instance.wled_id,
+                    'name': instance.name,
+                    'ip': instance.ip_address,
+                    'max_leds': instance.max_leds,
+                    'display_name': instance.display_name
+                }
+                for instance in instances
+            ]
+            print(f"[DEBUG] Loaded WLED instances from database: {wled_list}")
+            return wled_list
+        except Exception as e:
+            print(f"[DEBUG] Error reading WLED instances from database: {e}")
             return []
 
     def setup_urls(self):
@@ -408,7 +494,9 @@ class WledInventreePlugin(UrlsMixin, LocateMixin, SettingsMixin, InvenTreePlugin
             re_path(r"^unregister/(?P<pk>\d+)/$", self.view_unregister, name="unregister"),
             re_path(r"^register/$", self.view_register, name="register-simple"),
             re_path(r"^register-wled/$", self.view_register_wled, name="register-wled"),
+            re_path(r"^edit-wled/(?P<wled_id>\d+)/$", self.view_edit_wled, name="edit-wled"),
             re_path(r"^unregister-wled/(?P<wled_id>\d+)/$", self.view_unregister_wled, name="unregister-wled"),
+            re_path(r"^edit-location/(?P<location_id>\d+)/$", self.view_edit_location, name="edit-location"),
         ]
 
     @staticmethod

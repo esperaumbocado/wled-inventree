@@ -4,143 +4,608 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-    <title>WLED Dashboard</title>
+    <title>WLED StockTree Dashboard</title>
     <link rel="stylesheet" href="{% static 'plugins/inventree-wled-stocktree/styles.css' %}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
 </head>
 <body>
-<header>
-    <h1>WLED StockTree Dashboard</h1>
-    <button onclick="toggleTheme()">Toggle Theme</button>
-</header>
-<main>
-    <!-- Optional Alert Placeholder -->
-    <!-- <div class="alert success">WLED instance added!</div> -->
+<div class="dashboard-container">
+    <header class="dashboard-header">
+        <div class="header-content">
+            <div class="header-left">
+                <i class="fas fa-lightbulb"></i>
+                <h1>WLED StockTree Dashboard</h1>
+            </div>
+            <div class="header-right">
+                <button class="btn btn-secondary" onclick="turnOffAllLeds()">
+                    <i class="fas fa-power-off"></i>
+                    Turn Off All LEDs
+                </button>
+                <button class="theme-toggle" onclick="toggleTheme()">
+                    <i class="fas fa-moon"></i>
+                </button>
+            </div>
+        </div>
+    </header>
 
-    <div class="grid-2">
-        <div class="section-card">
-            <h2>Registered WLED Instances</h2>
-            <table>
-                <thead>
-                <tr>
-                    <th>ID</th>
-                    <th>IP Address</th>
-                    <th>Max LEDs</th>
-                    <th>Actions</th>
-                </tr>
-                </thead>
-                <tbody>
-                {% for wled in wled_instances %}
-                    <tr>
-                        <td>{{ wled.id }}</td>
-                        <td>{{ wled.ip }}</td>
-                        <td>{{ wled.max_leds }}</td>
-                        <td>
-                            <a href="{% url 'plugin:inventree-wled-stocktree:unregister-wled' wled.id %}" class="btn btn-danger">Unregister</a>
-                        </td>
-                    </tr>
-                {% empty %}
-                    <tr>
-                        <td colspan="4">No WLED instances registered.</td>
-                    </tr>
-                {% endfor %}
-                </tbody>
-            </table>
+    <div class="dashboard-content">
+        <!-- Status Cards -->
+        <div class="status-cards">
+            <div class="status-card">
+                <div class="status-icon">
+                    <i class="fas fa-microchip"></i>
+                </div>
+                <div class="status-info">
+                    <h3>{{ wled_instances|length }}</h3>
+                    <p>WLED Devices</p>
+                </div>
+            </div>
+            <div class="status-card">
+                <div class="status-icon">
+                    <i class="fas fa-map-marker-alt"></i>
+                </div>
+                <div class="status-info">
+                    <h3>{{ target_locs|length }}</h3>
+                    <p>Mapped Locations</p>
+                </div>
+            </div>
+            <div class="status-card">
+                <div class="status-icon">
+                    <i class="fas fa-lightbulb"></i>
+                </div>
+                <div class="status-info">
+                    <h3>{{ max_leds }}</h3>
+                    <p>Max LEDs</p>
+                </div>
+            </div>
         </div>
 
-        <div class="section-card">
-            <h3>Register WLED Instance</h3>
-            <form method="post" action="{% url 'plugin:inventree-wled-stocktree:register-wled' %}">
-                {% csrf_token %}
-                <label for="wled_ip">WLED IP Address</label>
-                <input type="text" id="wled_ip" name="wled_ip" required>
-
-                <label for="wled_max_leds">Max LEDs</label>
-                <input type="number" id="wled_max_leds" name="wled_max_leds" required>
-
-                <button type="submit">Add Instance</button>
-            </form>
-        </div>
-    </div>
-
-    <div class="section-card">
-        <h2>Registered Stock Locations</h2>
-        <table>
-            <thead>
-            <tr>
-                <th>ID</th>
-                <th>Name</th>
-                <th>WLED X</th>
-                <th>X Min</th>
-                <th>X Max</th>
-                <th>WLED Y</th>
-                <th>Y Min</th>
-                <th>Y Max</th>
-                <th>Actions</th>
-            </tr>
-            </thead>
-            <tbody>
-            {% for loc in target_locs %}
-                <tr>
-                    <td>{{ loc.id }}</td>
-                    <td>{{ loc.name }}</td>
-                    <td>{{ loc.instance_x }}</td>
-                    <td>{{ loc.x_min }}</td>
-                    <td>{{ loc.x_max }}</td>
-                    <td>{{ loc.instance_y }}</td>
-                    <td>{{ loc.y_min }}</td>
-                    <td>{{ loc.y_max }}</td>
-                    <td>
-                        <a href="{% url 'plugin:inventree-wled-stocktree:unregister' loc.id %}" class="btn btn-danger">Unregister</a>
-                    </td>
-                </tr>
-            {% endfor %}
-            </tbody>
-        </table>
-        <p><strong>Total Max LEDs:</strong> {{ max_leds }}</p>
-        <a href="{% url 'plugin:inventree-wled-stocktree:off' %}" class="btn">Turn Off All LEDs</a>
-    </div>
-
-    <div class="section-card">
-        <h3>Register LED Range(s) to Location</h3>
-        <form method="post" action="{% url 'plugin:inventree-wled-stocktree:register-simple' %}">
-            {% csrf_token %}
-            <label for="stocklocation">Stock Location ID</label>
-            <input type="number" id="stocklocation" name="stocklocation" required>
-
-            <label for="wled_instance_id_x">WLED Instance for X</label>
-            <select id="wled_instance_id_x" name="wled_instance_id_x" required>
-                <option value="">Select instance</option>
-                {% for inst in wled_instances %}
-                    <option value="{{ inst.id }}">{{ inst.ip }}</option>
-                {% endfor %}
-            </select>
-
-            <label for="x_min">X Min</label>
-            <input type="number" id="x_min" name="x_min" required>
-
-            <label for="x_max">X Max</label>
-            <input type="number" id="x_max" name="x_max" required>
-
-            <label for="wled_instance_id_y">WLED Instance for Y (optional)</label>
-            <select id="wled_instance_id_y" name="wled_instance_id_y" onchange="toggleYFields()">
-                <option value="">No instance selected</option>
-                {% for inst in wled_instances %}
-                    <option value="{{ inst.id }}">{{ inst.ip }}</option>
-                {% endfor %}
-            </select>
-
-            <div id="y_fields" style="display: none;">
-                <label for="y_min">Y Min (optional)</label>
-                <input type="number" id="y_min" name="y_min">
-
-                <label for="y_max">Y Max (optional)</label>
-                <input type="number" id="y_max" name="y_max">
+        <!-- Main Content Tabs -->
+        <div class="tab-container">
+            <div class="tab-buttons">
+                <button class="tab-button active" onclick="showTab('devices')">
+                    <i class="fas fa-microchip"></i>
+                    WLED Devices
+                </button>
+                <button class="tab-button" onclick="showTab('locations')">
+                    <i class="fas fa-map-marker-alt"></i>
+                    Stock Locations
+                </button>
+                <button class="tab-button" onclick="showTab('setup')">
+                    <i class="fas fa-cog"></i>
+                    Setup Wizard
+                </button>
             </div>
 
-            <button type="submit">Register</button>
+            <!-- WLED Devices Tab -->
+            <div class="tab-content active" id="devices-tab">
+                <div class="tab-header">
+                    <h2><i class="fas fa-microchip"></i> WLED Devices</h2>
+                    <button class="btn btn-primary" onclick="showAddDeviceModal()">
+                        <i class="fas fa-plus"></i>
+                        Add Device
+                    </button>
+                </div>
+
+                {% if wled_instances %}
+                <div class="device-grid">
+                    {% for wled in wled_instances %}
+                    <div class="device-card">
+                        <div class="device-header">
+                            <div class="device-status online">
+                                <i class="fas fa-circle"></i>
+                            </div>
+                            <h3>
+                                {% if wled.name %}
+                                    {{ wled.name }} (WLED {{ wled.id }})
+                                {% else %}
+                                    WLED {{ wled.id }}
+                                {% endif %}
+                            </h3>
+                            <div class="device-actions-header">
+                                <button class="btn-icon btn-secondary" onclick="editDevice({{ wled.id }}, '{{ wled.name|default:"" }}', '{{ wled.ip }}', {{ wled.max_leds }})" title="Edit Device">
+                                    <i class="fas fa-edit"></i>
+                                </button>
+                                <button class="btn-icon btn-danger" onclick="removeDevice({{ wled.id }})" title="Remove Device">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="device-info">
+                            <div class="info-row">
+                                <i class="fas fa-network-wired"></i>
+                                <span>{{ wled.ip }}</span>
+                            </div>
+                            <div class="info-row">
+                                <i class="fas fa-lightbulb"></i>
+                                <span>{{ wled.max_leds }} LEDs</span>
+                            </div>
+                        </div>
+                        <div class="device-actions">
+                            <button class="btn btn-sm btn-secondary" onclick="testDevice('{{ wled.ip }}')">
+                                <i class="fas fa-vial"></i>
+                                Test
+                            </button>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <div class="empty-state">
+                    <i class="fas fa-microchip"></i>
+                    <h3>No WLED devices configured</h3>
+                    <p>Start by adding your first WLED device to begin mapping stock locations.</p>
+                    <button class="btn btn-primary" onclick="showAddDeviceModal()">
+                        <i class="fas fa-plus"></i>
+                        Add Your First Device
+                    </button>
+                </div>
+                {% endif %}
+            </div>
+
+            <!-- Stock Locations Tab -->
+            <div class="tab-content" id="locations-tab">
+                <div class="tab-header">
+                    <h2><i class="fas fa-map-marker-alt"></i> Stock Locations</h2>
+                    <button class="btn btn-primary" onclick="showAddLocationModal()">
+                        <i class="fas fa-plus"></i>
+                        Map Location
+                    </button>
+                </div>
+
+                {% if target_locs %}
+                <div class="locations-table-container">
+                    <table class="locations-table">
+                        <thead>
+                            <tr>
+                                <th><i class="fas fa-hashtag"></i> ID</th>
+                                <th><i class="fas fa-map-marker-alt"></i> Location Path</th>
+                                <th><i class="fas fa-arrows-alt-h"></i> X Range</th>
+                                <th><i class="fas fa-arrows-alt-v"></i> Y Range</th>
+                                <th><i class="fas fa-microchip"></i> Device(s)</th>
+                                <th><i class="fas fa-cog"></i> Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                        {% for loc in target_locs %}
+                            <tr data-location-id="{{ loc.id }}"
+                                data-location-name="{{ loc.name }}"
+                                data-x-min="{{ loc.x_min }}"
+                                data-x-max="{{ loc.x_max }}"
+                                data-x-instance="{{ loc.instance_x }}"
+                                data-y-min="{{ loc.y_min|default:"" }}"
+                                data-y-max="{{ loc.y_max|default:"" }}"
+                                data-y-instance="{{ loc.instance_y|default:"" }}">
+                                <td><span class="location-id">{{ loc.id }}</span></td>
+                                <td>
+                                    <div class="location-name">
+                                        <i class="fas fa-folder"></i>
+                                        {{ loc.name }}
+                                    </div>
+                                </td>
+                                <td>
+                                    <span class="led-range">{{ loc.x_min }} - {{ loc.x_max }}</span>
+                                    <small>on WLED {{ loc.instance_x }}</small>
+                                </td>
+                                <td>
+                                    {% if loc.y_min and loc.y_max %}
+                                        <span class="led-range">{{ loc.y_min }} - {{ loc.y_max }}</span>
+                                        <small>on WLED {{ loc.instance_y }}</small>
+                                    {% else %}
+                                        <span class="text-muted">Not mapped</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <div class="device-badges">
+                                        <span class="device-badge">WLED {{ loc.instance_x }}</span>
+                                        {% if loc.instance_y %}
+                                            <span class="device-badge">WLED {{ loc.instance_y }}</span>
+                                        {% endif %}
+                                    </div>
+                                </td>
+                                <td>
+                                    <div class="action-buttons">
+                                        <button class="btn-icon btn-primary" onclick="testLocation({{ loc.id }})">
+                                            <i class="fas fa-eye"></i>
+                                        </button>
+                                        <button class="btn-icon btn-secondary" onclick="editLocation({{ loc.id }})">
+                                            <i class="fas fa-edit"></i>
+                                        </button>
+                                        <button class="btn-icon btn-danger" onclick="removeLocation({{ loc.id }})">
+                                            <i class="fas fa-trash"></i>
+                                        </button>
+                                    </div>
+                                </td>
+                            </tr>
+                        {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <div class="empty-state">
+                    <i class="fas fa-map-marker-alt"></i>
+                    <h3>No locations mapped yet</h3>
+                    <p>Map your stock locations to LED ranges to enable visual location finding.</p>
+                    {% if wled_instances %}
+                    <button class="btn btn-primary" onclick="showAddLocationModal()">
+                        <i class="fas fa-plus"></i>
+                        Map Your First Location
+                    </button>
+                    {% else %}
+                    <p class="text-muted">You need to add WLED devices first before mapping locations.</p>
+                    <button class="btn btn-secondary" onclick="showTab('devices')">
+                        <i class="fas fa-microchip"></i>
+                        Add WLED Devices
+                    </button>
+                    {% endif %}
+                </div>
+                {% endif %}
+            </div>
+
+            <!-- Setup Wizard Tab -->
+            <div class="tab-content" id="setup-tab">
+                <div class="setup-wizard">
+                    <h2><i class="fas fa-magic"></i> Setup Wizard</h2>
+                    <p>Follow these steps to configure your WLED StockTree system:</p>
+                    
+                    <div class="wizard-steps">
+                        <div class="wizard-step {% if wled_instances %}completed{% else %}active{% endif %}">
+                            <div class="step-number">1</div>
+                            <div class="step-content">
+                                <h3>Add WLED Devices</h3>
+                                <p>Connect your WLED devices to the network and add them here.</p>
+                                {% if not wled_instances %}
+                                <button class="btn btn-primary" onclick="showAddDeviceModal()">
+                                    <i class="fas fa-plus"></i>
+                                    Add WLED Device
+                                </button>
+                                {% else %}
+                                <span class="status-check"><i class="fas fa-check"></i> {{ wled_instances|length }} device(s) added</span>
+                                {% endif %}
+                            </div>
+                        </div>
+
+                        <div class="wizard-step {% if target_locs %}completed{% elif wled_instances %}active{% endif %}">
+                            <div class="step-number">2</div>
+                            <div class="step-content">
+                                <h3>Map Stock Locations</h3>
+                                <p>Assign LED ranges to your InvenTree stock locations.</p>
+                                {% if wled_instances and not target_locs %}
+                                <button class="btn btn-primary" onclick="showAddLocationModal()">
+                                    <i class="fas fa-map-marker-alt"></i>
+                                    Map Locations
+                                </button>
+                                {% elif target_locs %}
+                                <span class="status-check"><i class="fas fa-check"></i> {{ target_locs|length }} location(s) mapped</span>
+                                {% else %}
+                                <span class="text-muted">Complete step 1 first</span>
+                                {% endif %}
+                            </div>
+                        </div>
+
+                        <div class="wizard-step {% if target_locs %}active{% endif %}">
+                            <div class="step-number">3</div>
+                            <div class="step-content">
+                                <h3>Test Your Setup</h3>
+                                <p>Test the LED locations to ensure everything works correctly.</p>
+                                {% if target_locs %}
+                                <button class="btn btn-success" onclick="testAllLocations()">
+                                    <i class="fas fa-vial"></i>
+                                    Test All Locations
+                                </button>
+                                {% else %}
+                                <span class="text-muted">Complete previous steps first</span>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Add Device Modal -->
+<div class="modal" id="addDeviceModal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3><i class="fas fa-plus"></i> Add WLED Device</h3>
+            <button class="modal-close" onclick="closeModal('addDeviceModal')">&times;</button>
+        </div>
+        <form method="post" action="{% url 'plugin:inventree-wled-stocktree:register-wled' %}" onsubmit="submitDeviceForm(event)" novalidate>
+            {% csrf_token %}
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="wled_name"><i class="fas fa-tag"></i> Device Name (Optional)</label>
+                    <input type="text" id="wled_name" name="wled_name" placeholder="Kitchen LEDs, Warehouse Strip, etc.">
+                    <small>Give your device a friendly name for easier identification</small>
+                </div>
+                <div class="form-group">
+                    <label for="wled_ip"><i class="fas fa-network-wired"></i> IP Address</label>
+                    <input type="text" id="wled_ip" name="wled_ip" placeholder="192.168.1.100" required>
+                    <small>Enter the IP address of your WLED device</small>
+                </div>
+                <div class="form-group">
+                    <label for="wled_max_leds"><i class="fas fa-lightbulb"></i> Number of LEDs</label>
+                    <input type="number" id="wled_max_leds" name="wled_max_leds" value="100" min="1" required>
+                    <small>Total number of LEDs connected to this device</small>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="closeModal('addDeviceModal')">Cancel</button>
+                <button type="submit" class="btn btn-primary">
+                    <i class="fas fa-plus"></i>
+                    Add Device
+                </button>
+            </div>
         </form>
     </div>
-</main>
+</div>
+
+<!-- Edit Device Modal -->
+<div class="modal" id="editDeviceModal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3><i class="fas fa-edit"></i> Edit WLED Device</h3>
+            <button class="modal-close" onclick="closeModal('editDeviceModal')">&times;</button>
+        </div>
+        <form id="editDeviceForm" method="post" onsubmit="submitEditDeviceForm(event)" novalidate>
+            {% csrf_token %}
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="edit_wled_name"><i class="fas fa-tag"></i> Device Name (Optional)</label>
+                    <input type="text" id="edit_wled_name" name="wled_name" placeholder="Kitchen LEDs, Warehouse Strip, etc.">
+                    <small>Give your device a friendly name for easier identification</small>
+                </div>
+                <div class="form-group">
+                    <label for="edit_wled_ip"><i class="fas fa-network-wired"></i> IP Address</label>
+                    <input type="text" id="edit_wled_ip" name="wled_ip" placeholder="192.168.1.100" required>
+                    <small>Enter the IP address of your WLED device</small>
+                </div>
+                <div class="form-group">
+                    <label for="edit_wled_max_leds"><i class="fas fa-lightbulb"></i> Number of LEDs</label>
+                    <input type="number" id="edit_wled_max_leds" name="wled_max_leds" value="100" min="1" required>
+                    <small>Total number of LEDs connected to this device</small>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="closeModal('editDeviceModal')">Cancel</button>
+                <button type="submit" class="btn btn-primary">
+                    <i class="fas fa-save"></i>
+                    Save Changes
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Add Location Modal -->
+<div class="modal" id="addLocationModal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3><i class="fas fa-map-marker-alt"></i> Map Stock Location</h3>
+            <button class="modal-close" onclick="closeModal('addLocationModal')">&times;</button>
+        </div>
+        <form method="post" action="{% url 'plugin:inventree-wled-stocktree:register-simple' %}" onsubmit="submitLocationForm(event)" novalidate>
+            {% csrf_token %}
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="stocklocation"><i class="fas fa-folder"></i> Select Stock Location</label>
+                    <select id="stocklocation" name="stocklocation" required>
+                        <option value="">Choose a stock location...</option>
+                        {% for location in all_stocklocations %}
+                            <option value="{{ location.id }}" data-path="{{ location.pathstring }}">
+                                ID: {{ location.id }} - {{ location.pathstring }}
+                            </option>
+                        {% endfor %}
+                    </select>
+                    <small>Select the stock location you want to map to LED ranges</small>
+                </div>
+                
+                <div class="form-section">
+                    <h4><i class="fas fa-arrows-alt-h"></i> X-Axis LED Mapping (Required)</h4>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="wled_instance_id_x">WLED Device</label>
+                            <select id="wled_instance_id_x" name="wled_instance_id_x" required>
+                                <option value="">Select device...</option>
+                                {% for inst in wled_instances %}
+                                    <option value="{{ inst.id }}">
+                                        {% if inst.name %}
+                                            {{ inst.name }} (WLED {{ inst.id }}) - {{ inst.ip }}
+                                        {% else %}
+                                            WLED {{ inst.id }} - {{ inst.ip }}
+                                        {% endif %}
+                                    </option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="x_min">Start LED</label>
+                            <input type="number" id="x_min" name="x_min" min="0" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="x_max">End LED</label>
+                            <input type="number" id="x_max" name="x_max" min="0" required>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="form-section">
+                    <div class="form-group">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="enable_y_mapping" onchange="toggleYMapping()">
+                            <span class="checkmark"></span>
+                            Enable Y-Axis LED Mapping (Optional)
+                        </label>
+                    </div>
+                    
+                    <div id="y_mapping_section" style="display: none;">
+                        <h4><i class="fas fa-arrows-alt-v"></i> Y-Axis LED Mapping</h4>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="wled_instance_id_y">WLED Device</label>
+                                <select id="wled_instance_id_y" name="wled_instance_id_y">
+                                    <option value="">Select device...</option>
+                                    {% for inst in wled_instances %}
+                                        <option value="{{ inst.id }}">
+                                            {% if inst.name %}
+                                                {{ inst.name }} (WLED {{ inst.id }}) - {{ inst.ip }}
+                                            {% else %}
+                                                WLED {{ inst.id }} - {{ inst.ip }}
+                                            {% endif %}
+                                        </option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="y_min">Start LED</label>
+                                <input type="number" id="y_min" name="y_min" min="0">
+                            </div>
+                            <div class="form-group">
+                                <label for="y_max">End LED</label>
+                                <input type="number" id="y_max" name="y_max" min="0">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="closeModal('addLocationModal')">Cancel</button>
+                <button type="submit" class="btn btn-primary">
+                    <i class="fas fa-save"></i>
+                    Map Location
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Edit Location Modal -->
+<div class="modal" id="editLocationModal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3><i class="fas fa-edit"></i> Edit Location Mapping</h3>
+            <button class="modal-close" onclick="closeModal('editLocationModal')">&times;</button>
+        </div>
+        <form id="editLocationForm" method="post" onsubmit="submitEditLocationForm(event)" novalidate>
+            {% csrf_token %}
+            <div class="modal-body">
+                <div class="form-group">
+                    <label><i class="fas fa-folder"></i> Stock Location</label>
+                    <div id="edit_location_name" class="location-display"></div>
+                </div>
+                
+                <div class="form-section">
+                    <h4><i class="fas fa-arrows-alt-h"></i> X-Axis LED Mapping (Required)</h4>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="edit_wled_instance_id_x">WLED Device</label>
+                            <select id="edit_wled_instance_id_x" name="wled_instance_id_x" required>
+                                <option value="">Select device...</option>
+                                {% for inst in wled_instances %}
+                                    <option value="{{ inst.id }}">
+                                        {% if inst.name %}
+                                            {{ inst.name }} (WLED {{ inst.id }}) - {{ inst.ip }}
+                                        {% else %}
+                                            WLED {{ inst.id }} - {{ inst.ip }}
+                                        {% endif %}
+                                    </option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="edit_x_min">Start LED</label>
+                            <input type="number" id="edit_x_min" name="x_min" min="0" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="edit_x_max">End LED</label>
+                            <input type="number" id="edit_x_max" name="x_max" min="0" required>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="form-section">
+                    <div class="form-group">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="edit_enable_y_mapping" onchange="toggleEditYMapping()">
+                            <span class="checkmark"></span>
+                            Enable Y-Axis LED Mapping (Optional)
+                        </label>
+                    </div>
+                    
+                    <div id="edit_y_mapping_section" style="display: none;">
+                        <h4><i class="fas fa-arrows-alt-v"></i> Y-Axis LED Mapping</h4>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="edit_wled_instance_id_y">WLED Device</label>
+                                <select id="edit_wled_instance_id_y" name="wled_instance_id_y">
+                                    <option value="">Select device...</option>
+                                    {% for inst in wled_instances %}
+                                        <option value="{{ inst.id }}">
+                                            {% if inst.name %}
+                                                {{ inst.name }} (WLED {{ inst.id }}) - {{ inst.ip }}
+                                            {% else %}
+                                                WLED {{ inst.id }} - {{ inst.ip }}
+                                            {% endif %}
+                                        </option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="edit_y_min">Start LED</label>
+                                <input type="number" id="edit_y_min" name="y_min" min="0">
+                            </div>
+                            <div class="form-group">
+                                <label for="edit_y_max">End LED</label>
+                                <input type="number" id="edit_y_max" name="y_max" min="0">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="closeModal('editLocationModal')">Cancel</button>
+                <button type="submit" class="btn btn-primary">
+                    <i class="fas fa-save"></i>
+                    Save Changes
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
 <script src="{% static 'plugins/inventree-wled-stocktree/script.js' %}"></script>
+<script>
+    // Debug script to test if buttons work
+    console.log('Inline script loaded');
+    
+    // Test function to ensure buttons are working
+    function testButtonsWork() {
+        console.log('Testing buttons...');
+        const addDeviceBtn = document.querySelector('button[onclick="showAddDeviceModal()"]');
+        const addLocationBtn = document.querySelector('button[onclick="showAddLocationModal()"]');
+        
+        console.log('Add Device Button:', addDeviceBtn);
+        console.log('Add Location Button:', addLocationBtn);
+        
+        if (typeof showAddDeviceModal === 'function') {
+            console.log('showAddDeviceModal function is available');
+        } else {
+            console.error('showAddDeviceModal function is NOT available');
+        }
+        
+        if (typeof showAddLocationModal === 'function') {
+            console.log('showAddLocationModal function is available');
+        } else {
+            console.error('showAddLocationModal function is NOT available');
+        }
+    }
+    
+    // Test when page loads
+    document.addEventListener('DOMContentLoaded', function() {
+        setTimeout(testButtonsWork, 1000);
+    });
+</script>
 </body>
 </html>
